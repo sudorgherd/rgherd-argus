@@ -11,7 +11,7 @@ ARGUS uses a FastAPI backend, PostgreSQL, a React/Vite frontend, MAS/OIDC authen
 
 ## Current status
 
-This repository contains the ARGUS public source-release candidate.
+This repository contains the ARGUS public source-release candidate for version `v0.9.1`.
 
 ARGUS is under active development. It is not yet a polished one-command installer, and deployments should be reviewed carefully before operational use.
 
