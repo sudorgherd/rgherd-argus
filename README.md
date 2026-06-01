@@ -1,4 +1,4 @@
-<img width="1536" height="1024" alt="ARGUS_landing" src="https://github.com/user-attachments/assets/1fa4ddad-7c0b-4a79-be7d-ea438a9e75eb" />
+<img width="1536" height="1024" alt="ARGUS_landing" src="https://github.com/user-attachments/assets/2db5f172-3600-428f-8658-2abb24460d5f" />
 # ARGUS
 
 ARGUS is a self-hosted operator interface for dispatcher-mediated community coordination.
