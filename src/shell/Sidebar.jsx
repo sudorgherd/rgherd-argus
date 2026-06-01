@@ -68,7 +68,7 @@ export default function Sidebar({ activeNav, onSelect, navItems = [] }) {
 
               <p>
                 <span className="font-semibold text-slate-100">Version:</span>{" "}
-                <span className="font-mono text-emerald-200">v0.8.7</span>
+                <span className="font-mono text-emerald-200">v0.9.1</span>
               </p>
 
               <p>
