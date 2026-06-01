@@ -1,0 +1,57 @@
+node_modules/
+dist/
+.env
+.DS_Store
+*.bak-*
+test-results/
+playwright-report/
+__pycache__/
+*.pyc
+
+# Local secret/config variants
+.env.local
+*.env.local
+secrets.json
+credentials.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Extra local/runtime residue
+*.bak
+*.log
+*.tmp
+*.swp
+*.swo
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+
+# Local databases / dumps / exports
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+*.dump
+*.backup
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+backups/
+exports/
+
+# More secret/config variants
+.env.*
+!.env.example
+*.crt
+*.csr
+*.jks
+*.kdbx
+id_rsa*
+id_ed25519*
+known_hosts

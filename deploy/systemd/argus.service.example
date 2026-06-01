@@ -1,0 +1,21 @@
+[Unit]
+Description=ARGUS Operator Interface Backend
+After=network.target
+
+[Service]
+User=argus
+Group=argus
+WorkingDirectory=/opt/argus
+EnvironmentFile=/opt/argus/.env
+ExecStart=/opt/argus/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/argus
+
+[Install]
+WantedBy=multi-user.target

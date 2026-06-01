@@ -1,18 +1,48 @@
-# ARGUS Public Docs Draft Bundle Manifest
+# ARGUS Public Source Release Manifest
 
-Generated: 2026-05-21
+Status: source-release candidate
 
-Files:
-- docs/README.md
-- docs/beta-readiness.md
-- docs/lifecycle.md
-- docs/matrix-integration.md
-- docs/operational-workflow.md
-- docs/overview.md
-- docs/roles-and-permissions.md
-- docs/security-model.md
+This repository contains:
 
-Notes:
-- These are public-facing Markdown drafts.
-- They intentionally omit exact install commands until the final clean-room release repo is inspected.
-- They should be copied into the release repository under docs/ after final review.
+## Application source
+
+- `backend/` — FastAPI backend, database models, Alembic migrations, auth/config, Matrix integration logic
+- `src/` — React/Vite frontend source
+- `public/` — static public frontend assets
+- `tests/` — smoke/e2e test assets where present
+
+## Configuration and deployment
+
+- `.env.example` — public-safe runtime configuration template
+- `backend/requirements.txt` — Python dependency manifest
+- `package.json` / `package-lock.json` — frontend dependency manifest
+- `deploy/systemd/argus.service.example` — example systemd service
+- `deploy/nginx/argus.conf.example` — example nginx reverse proxy config
+- `docs/deployment.md` — deployment outline
+
+## Governance and project docs
+
+- `README.md`
+- `LICENSE`
+- `SECURITY.md`
+- `SUPPORT.md`
+- `CONTRIBUTING.md`
+- `CHANGELOG.md`
+- `NOTICE.md`
+- `TRADEMARKS.md`
+- `DEPLOYMENT-DISCLOSURE.md`
+- `docs/`
+
+## Exclusions
+
+The public source tree must not include:
+
+- `.env`
+- real secrets
+- Matrix access tokens
+- MAS client secrets
+- database dumps
+- private keys
+- production backups
+- operational logs
+- private deployment configuration
