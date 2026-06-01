@@ -1,8 +1,6 @@
 # Support
 
-ARGUS is being prepared for public source release.
-
-This repository is currently scaffold-only. Source code, deployment instructions, and full support procedures are not yet published.
+ARGUS is in public source-release candidate status.
 
 ## Important operational disclaimer
 
@@ -14,14 +12,14 @@ Do not rely on ARGUS as the sole system for life safety, emergency dispatch, med
 
 ## Current support status
 
-Until the initial source release is published, support is limited to public repository preparation and project documentation.
+Support is currently limited to source-release preparation, documentation, deployment review, and early self-hosting feedback.
 
 For RG Herd project contact, use:
 
-help@rgherd.com
+    help@rgherd.com
 
 ## Security issues
 
-Security reporting instructions will be finalized before source release.
-
 Do not post sensitive vulnerability details publicly.
+
+See `SECURITY.md`.
