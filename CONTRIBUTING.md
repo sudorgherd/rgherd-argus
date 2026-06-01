@@ -27,3 +27,9 @@ Please read:
 ## Security-sensitive changes
 
 For auth, permissions, Matrix delivery, redaction, lifecycle controls, or database migrations, include clear testing notes in the pull request.
+
+## AI-assisted contributions
+
+Contributions may use AI-assisted tooling, but contributors are responsible for reviewing, testing, and understanding the submitted changes.
+
+Do not submit AI-assisted code, documentation, generated examples, logs, or prompts that include secrets, private credentials, private user data, operational logs, or third-party material that cannot be legally contributed under this project license.
