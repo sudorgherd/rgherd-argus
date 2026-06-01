@@ -1,3 +1,4 @@
+<img width="1536" height="1024" alt="ARGUS_landing" src="https://github.com/user-attachments/assets/1fa4ddad-7c0b-4a79-be7d-ea438a9e75eb" />
 # ARGUS
 
 ARGUS is an operator interface for dispatcher-mediated community coordination.
