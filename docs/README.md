@@ -31,3 +31,11 @@ The following documentation should be finalized only after the clean-room releas
 - admin bootstrap guide
 
 Those documents depend on the final public repository layout and should not be locked against the live server tree.
+
+## AI-assisted development disclosure
+
+ARGUS is developed with AI-assisted tooling as part of the engineering workflow.
+
+Human maintainers direct the architecture, review code changes, test behavior, control releases, and remain responsible for security, privacy, licensing, and operational decisions. AI assistance may be used for drafting, refactoring, documentation, debugging support, test planning, and implementation guidance.
+
+No secrets, private deployment credentials, live tokens, private user data, or operational logs should be included in public source releases.
