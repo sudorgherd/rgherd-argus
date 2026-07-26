@@ -1,6 +1,6 @@
 # ARGUS Public Source Release Manifest
 
-Status: source-release candidate
+Status: public source release
 Version: v0.9.1
 
 This repository contains:

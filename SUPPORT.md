@@ -1,6 +1,6 @@
 # Support
 
-ARGUS is in public source-release candidate status.
+ARGUS is public pre-1.0 software under active development.
 
 ## Important operational disclaimer
 
