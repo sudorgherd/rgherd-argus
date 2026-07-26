@@ -15,6 +15,16 @@ This repository contains the public source release of ARGUS version `v1.0.0`.
 
 ARGUS is under active development. It is not yet a polished one-command installer, and deployments should be reviewed carefully before operational use.
 
+## Project ecosystem
+
+ARGUS is developed by [RaveGoat Labs](https://ravegoat.com/) as part of the wider [RG Herd](https://rgherd.com/) privacy-first communications and coordination ecosystem.
+
+Related public projects:
+
+- [ARGUS REDLINE](https://github.com/sudorgherd/argus-redline) — experimental long-range radio firmware and off-grid coordination infrastructure
+- [ARGUS v1.0.0 release](https://github.com/sudorgherd/rgherd-argus/releases/tag/v1.0.0) — the first public source release
+- [RG Herd](https://rgherd.com/) — project overview and public coordination infrastructure
+
 ## What ARGUS does
 
 ARGUS provides a structured operational layer for:
