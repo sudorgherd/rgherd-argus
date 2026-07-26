@@ -1,9 +1,9 @@
 # Changelog
 
-## v0.9.1
+## v1.0.0
 
-- Declared ARGUS public source-release candidate version.
-- Updated frontend-visible version from v0.8.7 to v0.9.1.
+- Declared ARGUS v1.0.0 as the first public source release.
+- Updated frontend-visible version from v0.8.7 to v1.0.0.
 
 ## Unreleased
 
