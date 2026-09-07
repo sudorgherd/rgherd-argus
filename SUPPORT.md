@@ -1,6 +1,6 @@
 # Support
 
-ARGUS v1.0.0 is the current public source release and remains under active development.
+ARGUS v1.1.0 is the current public source release and remains under active development.
 
 ## Important operational disclaimer
 
