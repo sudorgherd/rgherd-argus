@@ -1200,6 +1200,53 @@ def api_health(subject_id: str = Depends(require_authorized_subject_id)):
     }
 
 
+@app.get("/internal/status")
+def internal_status(db: Session = Depends(get_db)):
+    """
+    Local/WG-safe internal status endpoint.
+
+    This intentionally avoids returning Matrix tokens, Matrix user IDs,
+    room IDs, raw homeserver URLs, subject IDs, or raw exception strings.
+    """
+    generated_at = datetime.utcnow()
+
+    matrix_raw = get_matrix_config_status(db=db)
+    matrix_configured = bool(matrix_raw.get("configured"))
+    matrix_whoami_ok = bool(matrix_raw.get("whoami_ok"))
+
+    if matrix_configured and matrix_whoami_ok:
+        matrix_status = "ok"
+    elif matrix_configured:
+        matrix_status = "degraded"
+    else:
+        matrix_status = "not_configured"
+
+    return {
+        "service": "argus",
+        "status": "ok",
+        "generated_at": generated_at.isoformat() + "Z",
+        "checks": {
+            "backend": {
+                "status": "ok",
+                "detail": "ARGUS backend is responding",
+            },
+            "matrix": {
+                "status": matrix_status,
+                "configured": matrix_configured,
+                "homeserver_configured": bool(matrix_raw.get("homeserver_url")),
+                "sender_configured": bool(matrix_raw.get("sender_user_id")),
+                "access_token_configured": bool(matrix_raw.get("access_token_configured")),
+                "whoami_ok": matrix_whoami_ok,
+                "zones_mapped": matrix_raw.get("zones_with_matrix_room_ids"),
+                "active_zones_mapped": matrix_raw.get("active_zones_with_matrix_room_ids"),
+                "responders_mapped": matrix_raw.get("responders_with_matrix_user_ids"),
+                "active_responders_mapped": matrix_raw.get("active_responders_with_matrix_user_ids"),
+                "cached_dm_rooms": matrix_raw.get("responders_with_cached_dm_rooms"),
+            },
+        },
+    }
+
+
 @app.get("/login")
 async def login(request: Request):
     redirect_uri = request.url_for("auth_callback")
