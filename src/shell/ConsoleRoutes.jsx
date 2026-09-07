@@ -29,6 +29,7 @@ export default function ConsoleRoutes({
     handleMyAssignmentUpdate,
     handleNoteCreated,
     handleRecordCreated,
+    handleRecordSelected,
     handleRecordUpdated,
     handleResponderDeleted,
     handleResponderSaved,
@@ -100,7 +101,6 @@ export default function ConsoleRoutes({
     setResponderAddNoteOpen,
     setResponderNotesHistoryOpen,
     setSelectedCapacityZoneId,
-    setSelectedRecordId,
   } = setters;
 
   const {
@@ -132,6 +132,7 @@ export default function ConsoleRoutes({
                 effectiveCapacityZoneId={effectiveCapacityZoneId}
                 handleMyAssignmentUpdate={handleMyAssignmentUpdate}
                 handleNoteCreated={handleNoteCreated}
+                onRecordSelected={handleRecordSelected}
                 handleUpdateAvailability={handleUpdateAvailability}
                 loading={loading}
                 responderAddNoteOpen={responderAddNoteOpen}
@@ -146,7 +147,6 @@ export default function ConsoleRoutes({
                 setResponderAddNoteOpen={setResponderAddNoteOpen}
                 setResponderNotesHistoryOpen={setResponderNotesHistoryOpen}
                 setSelectedCapacityZoneId={setSelectedCapacityZoneId}
-                setSelectedRecordId={setSelectedRecordId}
                 subjectId={subjectId}
                 visibleDetailTabs={visibleDetailTabs}
                 zones={zones}
@@ -190,6 +190,7 @@ export default function ConsoleRoutes({
                 onAssignmentDeleted={handleAssignmentDeleted}
                 onNoteCreated={handleNoteCreated}
                 onRecordUpdated={handleRecordUpdated}
+                onRecordSelected={handleRecordSelected}
                 onRetryLastAlert={handleRetryLastAlert}
                 onSendAlert={handleSendAlert}
                 onTabChange={setActiveDetailTab}
@@ -199,7 +200,6 @@ export default function ConsoleRoutes({
                 responders={responders}
                 selectedAssignments={selectedAssignments}
                 selectedRecord={selectedRecord && isActiveQueueRecord(selectedRecord) ? selectedRecord : null}
-                setSelectedRecordId={setSelectedRecordId}
                 showAlerts
                 zones={zones}
               />
@@ -230,6 +230,7 @@ export default function ConsoleRoutes({
                 onAssignmentDeleted={handleAssignmentDeleted}
                 onNoteCreated={handleNoteCreated}
                 onRecordUpdated={handleRecordUpdated}
+                onRecordSelected={handleRecordSelected}
                 onRetryLastAlert={handleRetryLastAlert}
                 onSendAlert={handleSendAlert}
                 onTabChange={setActiveDetailTab}
@@ -239,7 +240,6 @@ export default function ConsoleRoutes({
                 responders={responders}
                 selectedAssignments={selectedAssignments}
                 selectedRecord={selectedRecord && isDispatchQueueRecord(selectedRecord) ? selectedRecord : null}
-                setSelectedRecordId={setSelectedRecordId}
                 showAlerts
                 zones={zones}
               />
@@ -258,6 +258,7 @@ export default function ConsoleRoutes({
                 onAssignmentDeleted={handleAssignmentDeleted}
                 onNoteCreated={handleNoteCreated}
                 onRecordUpdated={handleRecordUpdated}
+                onRecordSelected={handleRecordSelected}
                 onTabChange={setActiveDetailTab}
                 queueMode="closed_records"
                 records={records.filter(isClosedQueueRecord)}
@@ -265,7 +266,6 @@ export default function ConsoleRoutes({
                 responders={responders}
                 selectedAssignments={selectedAssignments}
                 selectedRecord={selectedRecord && isClosedQueueRecord(selectedRecord) ? selectedRecord : null}
-                setSelectedRecordId={setSelectedRecordId}
                 zones={zones}
               />
             ) : activeNav === "Archived Records" ? (
@@ -283,6 +283,7 @@ export default function ConsoleRoutes({
                 onAssignmentDeleted={handleAssignmentDeleted}
                 onNoteCreated={handleNoteCreated}
                 onRecordUpdated={handleRecordUpdated}
+                onRecordSelected={handleRecordSelected}
                 onTabChange={setActiveDetailTab}
                 queueMode="archived_records"
                 records={records.filter(isArchivedQueueRecord)}
@@ -290,7 +291,6 @@ export default function ConsoleRoutes({
                 responders={responders}
                 selectedAssignments={selectedAssignments}
                 selectedRecord={selectedRecord && isArchivedQueueRecord(selectedRecord) ? selectedRecord : null}
-                setSelectedRecordId={setSelectedRecordId}
                 zones={zones}
               />
             ) : activeNav === "Active Roster" ? (

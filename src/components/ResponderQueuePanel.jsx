@@ -50,11 +50,20 @@ export default function ResponderQueuePanel({
                 type="button"
                 onClick={() => onSelect(record.id)}
                 className={`w-full border-t border-slate-800 px-4 py-3 text-left transition first:border-t-0 hover:bg-slate-900/70 ${
-                  isSelected ? "bg-slate-900/80" : "bg-transparent"
-                }`}
+                  isSelected
+                    ? "bg-slate-900/90 ring-1 ring-inset ring-emerald-400/45"
+                    : record.has_unseen_activity
+                    ? "bg-violet-950/30"
+                    : "bg-transparent"
+                } ${record.has_unseen_activity ? "border-l-2 border-l-violet-400" : ""}`}
               >
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
                   <span className="font-semibold text-slate-100">#{record.id}</span>
+                  {record.has_unseen_activity && (
+                    <span className="rounded border border-violet-400/55 bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold tracking-[0.12em] text-violet-100">
+                      UPDATED
+                    </span>
+                  )}
                   <span>·</span>
                   <span>{zoneLabel(record.zone_id, zones)}</span>
                   <span>·</span>

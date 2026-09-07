@@ -30,6 +30,7 @@ export default function DispatchRecordsView({
   onAssignmentDeleted,
   onNoteCreated,
   onRecordUpdated,
+  onRecordSelected,
   onRetryLastAlert,
   onSendAlert,
   onTabChange,
@@ -39,7 +40,6 @@ export default function DispatchRecordsView({
   responders,
   selectedAssignments,
   selectedRecord,
-  setSelectedRecordId,
   showAlerts = false,
   zones,
 }) {
@@ -59,10 +59,7 @@ export default function DispatchRecordsView({
           assignmentsByRecordId={assignmentsByRecordId}
           responderMap={responderMap}
           selectedRecordId={selectedRecord?.id ?? null}
-          onSelect={(recordId) => {
-            setSelectedRecordId(recordId);
-            onTabChange("Overview");
-          }}
+          onSelect={onRecordSelected}
           loading={loading}
           zones={zones}
         />

@@ -20,6 +20,7 @@ export default function ResponderInterfaceView({
   handleNoteCreated,
   handleUpdateAvailability,
   loading,
+  onRecordSelected,
   responderAddNoteOpen,
   responderConsoleRecords,
   responderMap,
@@ -32,7 +33,6 @@ export default function ResponderInterfaceView({
   setResponderAddNoteOpen,
   setResponderNotesHistoryOpen,
   setSelectedCapacityZoneId,
-  setSelectedRecordId,
   subjectId,
   visibleDetailTabs,
   zones,
@@ -54,10 +54,7 @@ export default function ResponderInterfaceView({
                     assignmentsByRecordId={assignmentsByRecordId}
                     currentResponderId={currentResponderRows[0]?.id ?? null}
                     selectedRecordId={responderSelectedRecord?.id ?? null}
-                    onSelect={(recordId) => {
-                      setSelectedRecordId(recordId);
-                      setActiveDetailTab("Overview");
-                    }}
+                    onSelect={onRecordSelected}
                     loading={loading}
                     zones={zones}
                   />

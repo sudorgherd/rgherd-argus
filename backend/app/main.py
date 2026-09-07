@@ -17,6 +17,12 @@ from .auth import oauth
 from .database import SessionLocal, engine
 from .models import Record as RecordModel, RecordAssignment as RecordAssignmentModel, RecordNote as RecordNoteModel, AuditEvent as AuditEventModel, SystemAuditEvent as SystemAuditEventModel, Base, Responder, ResponderZone, SystemSetting, Zone
 from .matrix_config import MATRIX_CONFIG, MatrixConfig
+from .record_activity import (
+    bump_record_activity,
+    get_last_seen_versions,
+    mark_record_activity_seen,
+    mark_record_activity_seen_by_subject,
+)
 from authlib.integrations.base_client.errors import MismatchingStateError
 
 
@@ -331,6 +337,13 @@ def require_authorized_subject_id(
     return responder.subject_id
 
 
+def require_authorized_responder(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Responder:
+    return get_current_responder(request, db)
+
+
 def require_dispatch_subject_id(
     request: Request,
     db: Session = Depends(get_db),
@@ -437,8 +450,11 @@ def serialize_utc_datetime(value):
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def serialize_record(record: RecordModel) -> dict:
-    return {
+def serialize_record(
+    record: RecordModel,
+    has_unseen_activity: bool | None = None,
+) -> dict:
+    serialized = {
         "id": record.id,
         "summary": record.summary,
         "category": record.category,
@@ -447,6 +463,7 @@ def serialize_record(record: RecordModel) -> dict:
         "professional_escalation": record.professional_escalation,
         "status": record.status,
         "verification_state": record.verification_state,
+        "activity_version": record.activity_version,
         "location": record.location,
         "zone_id": record.zone_id,
         "source_type": record.source_type,
@@ -466,10 +483,16 @@ def serialize_record(record: RecordModel) -> dict:
         "internal_notes_summary": record.internal_notes_summary,
         "responder_instructions": record.responder_instructions,
     }
+    if has_unseen_activity is not None:
+        serialized["has_unseen_activity"] = has_unseen_activity
+    return serialized
 
 
-def serialize_record_redacted(record: RecordModel) -> dict:
-    return {
+def serialize_record_redacted(
+    record: RecordModel,
+    has_unseen_activity: bool | None = None,
+) -> dict:
+    serialized = {
         "id": record.id,
         "summary": record.summary,
         "category": record.category,
@@ -477,15 +500,22 @@ def serialize_record_redacted(record: RecordModel) -> dict:
         "active_response": record.active_response,
         "status": record.status,
         "verification_state": record.verification_state,
+        "activity_version": record.activity_version,
         "location": record.location,
         "zone_id": record.zone_id,
         "created_at": serialize_utc_datetime(record.created_at),
         "updated_at": serialize_utc_datetime(record.updated_at),
     }
+    if has_unseen_activity is not None:
+        serialized["has_unseen_activity"] = has_unseen_activity
+    return serialized
 
 
-def serialize_record_responder(record: RecordModel) -> dict:
-    return {
+def serialize_record_responder(
+    record: RecordModel,
+    has_unseen_activity: bool | None = None,
+) -> dict:
+    serialized = {
         "id": record.id,
         "summary": record.summary,
         "category": record.category,
@@ -493,6 +523,7 @@ def serialize_record_responder(record: RecordModel) -> dict:
         "active_response": record.active_response,
         "status": record.status,
         "verification_state": record.verification_state,
+        "activity_version": record.activity_version,
         "location": record.location,
         "zone_id": record.zone_id,
         "source_type": record.source_type,
@@ -508,6 +539,9 @@ def serialize_record_responder(record: RecordModel) -> dict:
         "follow_up_needed": record.follow_up_needed,
         "responder_instructions": record.responder_instructions,
     }
+    if has_unseen_activity is not None:
+        serialized["has_unseen_activity"] = has_unseen_activity
+    return serialized
 
 
 
@@ -830,6 +864,7 @@ def delete_record_assignment(
         },
     )
 
+    bump_record_activity(db, record, subject_id)
     db.delete(assignment)
     db.commit()
 
@@ -1441,7 +1476,7 @@ def get_records(
             .order_by(RecordModel.created_at.desc(), RecordModel.id.desc())
             .all()
         )
-        records = [serialize_record(record) for record in results]
+        assigned_ids = None
     else:
         assigned_results = (
             apply_lifecycle_filters(
@@ -1473,16 +1508,58 @@ def get_records(
             key=lambda record: (record.created_at or datetime.min, record.id),
             reverse=True,
         )
-        records = [
-            serialize_record_responder(record) if record.id in assigned_ids else serialize_record_redacted(record)
-            for record in results
-        ]
+    last_seen_versions = get_last_seen_versions(
+        db,
+        responder.id,
+        [record.id for record in results],
+    )
+
+    def serialize_visible_record(record: RecordModel) -> dict:
+        has_unseen_activity = (
+            record.activity_version > last_seen_versions.get(record.id, 0)
+        )
+        if assigned_ids is None:
+            return serialize_record(record, has_unseen_activity)
+        if record.id in assigned_ids:
+            return serialize_record_responder(record, has_unseen_activity)
+        return serialize_record_redacted(record, has_unseen_activity)
+
+    records = [serialize_visible_record(record) for record in results]
 
     return {
         "count": len(records),
         "records": records,
         "subject_id": subject_id,
         "lifecycle": lifecycle,
+    }
+
+
+@app.post("/api/records/{record_id}/view")
+def mark_record_viewed(
+    record_id: int,
+    responder: Responder = Depends(require_authorized_responder),
+    db: Session = Depends(get_db),
+):
+    record = db.query(RecordModel).filter(RecordModel.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    if not (
+        responder.is_admin
+        or responder.can_dispatch
+        or responder_has_record_access(db, responder.subject_id, record_id)
+    ):
+        raise HTTPException(status_code=403, detail="Record access required")
+
+    state = mark_record_activity_seen(db, record, responder)
+    db.commit()
+    db.refresh(state)
+
+    return {
+        "record_id": record.id,
+        "last_seen_version": state.last_seen_version,
+        "viewed_at": serialize_utc_datetime(state.viewed_at),
+        "has_unseen_activity": False,
     }
 
 
@@ -2572,6 +2649,8 @@ def create_record_note(
     db.add(note)
     db.flush()
 
+    bump_record_activity(db, record, subject_id)
+
     write_audit_event(
         db=db,
         actor_id=subject_id,
@@ -2646,6 +2725,8 @@ def update_record_assignment(
     db.add(assignment)
     db.flush()
 
+    bump_record_activity(db, record, subject_id)
+
     event_type = "responder_assignment_updated"
     event_metadata = {
         "assignment_id": assignment.id,
@@ -2716,6 +2797,8 @@ def create_record_assignment(
 
     db.add(assignment)
     db.flush()
+
+    bump_record_activity(db, record, subject_id)
 
     write_audit_event(
         db=db,
@@ -3001,6 +3084,8 @@ def create_record(
     db.add(new_record)
     db.flush()
 
+    mark_record_activity_seen_by_subject(db, new_record, subject_id)
+
     write_audit_event(
         db=db,
         actor_id=subject_id,
@@ -3038,7 +3123,7 @@ def create_record(
     db.commit()
     db.refresh(new_record)
 
-    return serialize_record(new_record)
+    return serialize_record(new_record, has_unseen_activity=False)
 
 
 @app.patch("/api/records/{record_id}")
@@ -3118,6 +3203,9 @@ def update_record(
     db.add(record)
     db.flush()
 
+    if update_changes:
+        bump_record_activity(db, record, subject_id)
+
     write_audit_event(
         db=db,
         actor_id=subject_id,
@@ -3142,7 +3230,10 @@ def update_record(
     db.commit()
     db.refresh(record)
 
-    return serialize_record(record)
+    return serialize_record(
+        record,
+        has_unseen_activity=False if update_changes else None,
+    )
 
 
 @app.post("/api/records/{record_id}/close")
@@ -3195,6 +3286,8 @@ def close_record(
     db.add(record)
     db.flush()
 
+    bump_record_activity(db, record, subject_id)
+
     write_audit_event(
         db=db,
         actor_id=subject_id,
@@ -3213,7 +3306,7 @@ def close_record(
     db.commit()
     db.refresh(record)
 
-    return serialize_record(record)
+    return serialize_record(record, has_unseen_activity=False)
 
 
 @app.post("/api/records/{record_id}/reopen")
@@ -3257,6 +3350,8 @@ def reopen_record(
     db.add(record)
     db.flush()
 
+    bump_record_activity(db, record, subject_id)
+
     write_audit_event(
         db=db,
         actor_id=subject_id,
@@ -3271,7 +3366,7 @@ def reopen_record(
 
     db.commit()
     db.refresh(record)
-    return serialize_record(record)
+    return serialize_record(record, has_unseen_activity=False)
 
 
 @app.post("/api/records/{record_id}/archive")
@@ -3299,6 +3394,8 @@ def archive_record(
     db.add(record)
     db.flush()
 
+    bump_record_activity(db, record, subject_id)
+
     write_audit_event(
         db=db,
         actor_id=subject_id,
@@ -3313,7 +3410,7 @@ def archive_record(
 
     db.commit()
     db.refresh(record)
-    return serialize_record(record)
+    return serialize_record(record, has_unseen_activity=False)
 
 
 @app.delete("/api/records/{record_id}/purge")

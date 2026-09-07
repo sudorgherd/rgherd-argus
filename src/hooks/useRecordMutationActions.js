@@ -1,5 +1,6 @@
 import { deleteAssignment, updateAssignment } from "../modules/assignments/assignmentsApi";
 import { getRecordAudit } from "../modules/audit/auditApi";
+import { markRecordViewed } from "../modules/records/recordsApi";
 import { addResponderZone, removeResponderZone } from "../modules/responders/respondersApi";
 import { safeArray } from "../utils/display";
 
@@ -55,6 +56,30 @@ export function useRecordMutationActions({
       )
     );
     setError("");
+  }
+
+  async function handleRecordSelected(recordId) {
+    setSelectedRecordId(recordId);
+    setActiveDetailTab("Overview");
+
+    const selectedRecord = records.find((record) => record.id === recordId);
+    if (!selectedRecord?.has_unseen_activity) {
+      return;
+    }
+
+    try {
+      const viewState = await markRecordViewed(recordId);
+      setRecords((current) =>
+        current.map((record) =>
+          record.id === recordId && record.activity_version <= viewState.last_seen_version
+            ? { ...record, has_unseen_activity: false }
+            : record
+        )
+      );
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to acknowledge record activity");
+    }
   }
 
   async function handleNoteCreated(createdNote) {
@@ -162,6 +187,7 @@ export function useRecordMutationActions({
     handleMyAssignmentUpdate,
     handleNoteCreated,
     handleRecordCreated,
+    handleRecordSelected,
     handleRecordUpdated,
     handleResponderZoneAdded,
     handleResponderZoneRemoved,
