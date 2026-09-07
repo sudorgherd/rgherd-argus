@@ -15,6 +15,13 @@ export function updateRecord(recordId, payload) {
   });
 }
 
+export function markRecordViewed(recordId) {
+  return apiRequest(`/api/records/${recordId}/view`, {
+    method: "POST",
+    errorMessage: `POST /api/records/${recordId}/view failed`,
+  });
+}
+
 export function closeRecord(recordId, payload) {
   return apiRequest(`/api/records/${recordId}/close`, {
     method: "POST",

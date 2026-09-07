@@ -52,6 +52,8 @@ const records = [
     responders_involved: [],
     need_met: true,
     follow_up_needed: false,
+    activity_version: 2,
+    has_unseen_activity: true,
   },
   {
     id: 102,
@@ -74,6 +76,8 @@ const records = [
     responders_involved: ["Responder One"],
     need_met: true,
     follow_up_needed: false,
+    activity_version: 1,
+    has_unseen_activity: false,
   },
   {
     id: 103,
@@ -96,6 +100,8 @@ const records = [
     responders_involved: ["Responder One"],
     need_met: true,
     follow_up_needed: false,
+    activity_version: 1,
+    has_unseen_activity: false,
   },
 ];
 
@@ -168,8 +174,9 @@ async function fulfillJson(route, payload, status = 200) {
   });
 }
 
-async function installMockApi(page) {
+async function installMockApi(page, viewedRecordIds = [], failViewAcknowledgement = false) {
   const browserErrors = [];
+  const servedRecords = records.map((record) => ({ ...record }));
 
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -188,7 +195,7 @@ async function installMockApi(page) {
     const method = request.method();
 
     if (method === "GET" && pathname === "/api/records") {
-      return fulfillJson(route, { records });
+      return fulfillJson(route, { records: servedRecords });
     }
 
     if (method === "GET" && pathname === "/api/responders/me") {
@@ -279,12 +286,38 @@ async function installMockApi(page) {
       return fulfillJson(route, { audit_events: auditEvents[recordId] || [] });
     }
 
+    const viewMatch = pathname.match(/^\/api\/records\/(\d+)\/view$/);
+    if (method === "POST" && viewMatch) {
+      const recordId = Number(viewMatch[1]);
+      const current = servedRecords.find((record) => record.id === recordId);
+      viewedRecordIds.push(recordId);
+      if (failViewAcknowledgement) {
+        return fulfillJson(route, { detail: "Mock acknowledgement failed" }, 500);
+      }
+      if (current) {
+        current.has_unseen_activity = false;
+      }
+      return fulfillJson(route, {
+        record_id: recordId,
+        last_seen_version: current?.activity_version || 0,
+        viewed_at: "2026-05-18T04:45:00Z",
+        has_unseen_activity: false,
+      });
+    }
+
     const recordMatch = pathname.match(/^\/api\/records\/(\d+)$/);
     if (method === "PATCH" && recordMatch) {
       const recordId = Number(recordMatch[1]);
-      const current = records.find((record) => record.id === recordId);
+      const current = servedRecords.find((record) => record.id === recordId);
       const body = JSON.parse(request.postData() || "{}");
-      return fulfillJson(route, { ...current, ...body, updated_at: "2026-05-18T04:40:00Z" });
+      if (current) {
+        Object.assign(current, body, {
+          activity_version: current.activity_version + 1,
+          has_unseen_activity: false,
+          updated_at: "2026-05-18T04:40:00Z",
+        });
+      }
+      return fulfillJson(route, current || { id: recordId, ...body });
     }
 
     const alertMatch = pathname.match(/^\/api\/records\/(\d+)\/matrix-alert$/);
@@ -368,8 +401,11 @@ test("ARGUS refactored console renders core routes and record-detail UI", async 
   await page.getByRole("button", { name: "Archived Records", exact: true }).click();
   await expect(page.getByText("Mock archived record").first()).toBeVisible();
 
-  await page.getByRole("button", { name: "Zones", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Zones" })).toBeVisible();
+  await page.getByRole("button", { name: "Admin", exact: true }).click();
+  await page.getByRole("button", { name: "Manage Zones", exact: true }).click();
+  const zonesModal = modalByText("Manage Zones");
+  await expect(zonesModal.getByRole("heading", { name: "Zones", exact: true })).toBeVisible();
+  await zonesModal.getByRole("button", { name: "Close", exact: true }).click();
 
   await page.getByRole("button", { name: "Active Roster", exact: true }).click();
   await expect(page.getByText("Dispatch Operator").first()).toBeVisible();
@@ -379,4 +415,55 @@ test("ARGUS refactored console renders core routes and record-detail UI", async 
   await expect(page.getByText("mock_system_bootstrap")).toBeVisible();
 
   expect(browserErrors).toEqual([]);
+});
+
+test("bootstrap selection does not acknowledge until a dispatch row is clicked", async ({ page }) => {
+  const viewedRecordIds = [];
+  const browserErrors = await installMockApi(page, viewedRecordIds);
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Mock active safety record" })).toBeVisible();
+  await expect(page.getByText("UPDATED", { exact: true })).toBeVisible();
+  expect(viewedRecordIds).toEqual([]);
+
+  const recordRow = page.getByRole("button").filter({ hasText: "Mock active safety record" }).first();
+  await recordRow.click();
+  await expect.poll(() => [...viewedRecordIds]).toEqual([101]);
+  await expect(page.getByText("UPDATED", { exact: true })).toHaveCount(0);
+
+  await recordRow.click();
+  await page.waitForTimeout(100);
+  expect(viewedRecordIds).toEqual([101]);
+  expect(browserErrors).toEqual([]);
+});
+
+test("responder queue click acknowledges unseen activity explicitly", async ({ page }) => {
+  const viewedRecordIds = [];
+  const browserErrors = await installMockApi(page, viewedRecordIds);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Responder Interface", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Responder Workspace" })).toBeVisible();
+  await expect(page.getByText("UPDATED", { exact: true })).toBeVisible();
+  expect(viewedRecordIds).toEqual([]);
+
+  await page.getByRole("button").filter({ hasText: "Mock active safety record" }).first().click();
+  await expect.poll(() => [...viewedRecordIds]).toEqual([101]);
+  await expect(page.getByText("UPDATED", { exact: true })).toHaveCount(0);
+  expect(browserErrors).toEqual([]);
+});
+
+test("failed acknowledgement preserves selection and unseen highlight", async ({ page }) => {
+  const viewedRecordIds = [];
+  const browserErrors = await installMockApi(page, viewedRecordIds, true);
+
+  await page.goto("/");
+  const recordRow = page.getByRole("button").filter({ hasText: "Mock active safety record" }).first();
+  await recordRow.click();
+
+  await expect(page.getByText("Mock acknowledgement failed", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Mock active safety record" })).toBeVisible();
+  await expect(page.getByText("UPDATED", { exact: true })).toBeVisible();
+  expect(viewedRecordIds).toEqual([101]);
+  expect(browserErrors).toEqual([expect.stringContaining("500")]);
 });

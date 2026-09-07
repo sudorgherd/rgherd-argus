@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -102,6 +103,12 @@ class Record(Base):
     professional_escalation = Column(String, nullable=True)
     status = Column(String, nullable=False, default="new")
     verification_state = Column(String, nullable=False, default="pending")
+    activity_version = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
 
     # Optional intake detail
     location = Column(Text, nullable=True)
@@ -144,6 +151,37 @@ class Record(Base):
     assignments = relationship("RecordAssignment", back_populates="record")
     notes = relationship("RecordNote", back_populates="record")
     audit_events = relationship("AuditEvent", back_populates="record")
+
+
+class RecordViewState(Base):
+    __tablename__ = "record_view_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "record_id",
+            "responder_id",
+            name="uq_record_view_state_record_responder",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    record_id = Column(
+        Integer,
+        ForeignKey("records.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    responder_id = Column(
+        Integer,
+        ForeignKey("responders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    last_seen_version = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    viewed_at = Column(DateTime, nullable=True)
 
 
 class RecordAssignment(Base):
