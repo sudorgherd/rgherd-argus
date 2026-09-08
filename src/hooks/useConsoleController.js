@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAccessNavigation } from "./useAccessNavigation";
 import { useActiveRosterPolling } from "./useActiveRosterPolling";
@@ -11,9 +11,38 @@ import { useRecordMutationActions } from "./useRecordMutationActions";
 import { useResponderSessionActions } from "./useResponderSessionActions";
 import { useResponderHeartbeat } from "./useResponderHeartbeat";
 import { useSelectedRecordDetail } from "./useSelectedRecordDetail";
+import { useModuleCatalog } from "../modules/host/useModuleCatalog";
+import {
+  enabledModuleNavigation,
+  installedModuleManifests,
+  isModuleNavigation,
+} from "../modules/moduleRegistry";
+
+function navigationFromHash() {
+  const match = window.location.hash.match(/^#\/modules\/([^/]+)\/([^/]+)$/);
+  return match
+    ? `module:${decodeURIComponent(match[1])}:${decodeURIComponent(match[2])}`
+    : "Active Queue";
+}
 
 export function useConsoleController() {
-  const [activeNav, setActiveNav] = useState("Active Queue");
+  const [activeNav, setActiveNavState] = useState(navigationFromHash);
+  const setActiveNav = useCallback((value) => {
+    setActiveNavState((current) => {
+      const next = typeof value === "function" ? value(current) : value;
+      if (isModuleNavigation(next)) {
+        const [, moduleId, viewId] = next.split(":", 3);
+        window.history.replaceState(
+          null,
+          "",
+          `#/modules/${encodeURIComponent(moduleId)}/${encodeURIComponent(viewId)}`,
+        );
+      } else if (window.location.hash.startsWith("#/modules/")) {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+      return next;
+    });
+  }, []);
   const [activeDetailTab, setActiveDetailTab] = useState("Overview");
   const [records, setRecords] = useState([]);
   const [responders, setResponders] = useState([]);
@@ -39,6 +68,18 @@ export function useConsoleController() {
   const [matrixStatus, setMatrixStatus] = useState(null);
   const [systemAuditEvents, setSystemAuditEvents] = useState([]);
 
+  const moduleCatalog = useModuleCatalog(Boolean(meResponder));
+  const moduleNavItems = useMemo(
+    () => enabledModuleNavigation(moduleCatalog.catalog, meResponder),
+    [moduleCatalog.catalog, meResponder],
+  );
+
+  useEffect(() => {
+    const onHashChange = () => setActiveNavState(navigationFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
   const {
     allowedNavItems,
     canDispatch,
@@ -48,6 +89,7 @@ export function useConsoleController() {
     activeDetailTab,
     meCapabilities,
     meResponder,
+    moduleNavItems,
     responders,
     setActiveDetailTab,
     setActiveNav,
@@ -268,6 +310,12 @@ export function useConsoleController() {
     currentResponder,
     handleSignOut,
     meResponder,
+    moduleRuntime: {
+      catalog: moduleCatalog.catalog,
+      installedManifests: installedModuleManifests,
+      loading: moduleCatalog.loading,
+      refresh: moduleCatalog.refresh,
+    },
     setActiveNav,
     subjectId,
   };

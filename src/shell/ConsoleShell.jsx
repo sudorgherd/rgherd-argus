@@ -2,6 +2,8 @@ import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import ModuleOutlet from "./ModuleOutlet";
 import ConsoleRoutes from "./ConsoleRoutes";
+import ModuleView from "../modules/host/ModuleView";
+import { isModuleNavigation } from "../modules/moduleRegistry";
 
 function profileLabelFor(responder) {
   if (!responder) return "No operational profile";
@@ -26,6 +28,7 @@ export default function ConsoleShell({
   currentResponder,
   handleSignOut,
   meResponder,
+  moduleRuntime,
   setActiveNav,
   subjectId,
 }) {
@@ -46,7 +49,21 @@ export default function ConsoleShell({
           />
 
           <ModuleOutlet>
-            <ConsoleRoutes {...consoleRouteProps} />
+            {isModuleNavigation(activeNav) ? (
+              <ModuleView
+                activeNav={activeNav}
+                runtime={moduleRuntime}
+                host={{
+                  currentResponder: operator,
+                  responders: consoleRouteProps.data.responders,
+                  zones: consoleRouteProps.data.zones,
+                  navigate: setActiveNav,
+                  refreshModules: moduleRuntime.refresh,
+                }}
+              />
+            ) : (
+              <ConsoleRoutes {...consoleRouteProps} />
+            )}
           </ModuleOutlet>
         </div>
       </div>

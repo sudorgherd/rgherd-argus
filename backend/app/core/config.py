@@ -46,6 +46,7 @@ class BootConfig:
     mas_admin_client_id: str | None
     mas_admin_client_secret: str | None
     mas_admin_request_timeout_seconds: int
+    modules_dir: str | None
 
 
 def load_boot_config() -> BootConfig:
@@ -61,6 +62,7 @@ def load_boot_config() -> BootConfig:
         mas_admin_client_id=optional_env("MAS_ADMIN_CLIENT_ID"),
         mas_admin_client_secret=optional_env("MAS_ADMIN_CLIENT_SECRET"),
         mas_admin_request_timeout_seconds=optional_int_env("MAS_ADMIN_REQUEST_TIMEOUT_SECONDS", 8),
+        modules_dir=optional_env("ARGUS_MODULES_DIR"),
     )
 
 

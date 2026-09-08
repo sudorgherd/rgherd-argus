@@ -55,3 +55,7 @@ exports/
 id_rsa*
 id_ed25519*
 known_hosts
+
+# Deployment-installed frontend modules are build inputs, never public source.
+/src/modules/installed/*
+!/src/modules/installed/.gitignore
