@@ -73,6 +73,10 @@ export function useConsoleController() {
     () => enabledModuleNavigation(moduleCatalog.catalog, meResponder),
     [moduleCatalog.catalog, meResponder],
   );
+  const moduleFocusActive = useMemo(
+    () => moduleCatalog.catalog.some((item) => item.enabled),
+    [moduleCatalog.catalog],
+  );
 
   useEffect(() => {
     const onHashChange = () => setActiveNavState(navigationFromHash());
@@ -89,6 +93,7 @@ export function useConsoleController() {
     activeDetailTab,
     meCapabilities,
     meResponder,
+    moduleFocusActive,
     moduleNavItems,
     responders,
     setActiveDetailTab,
