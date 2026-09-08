@@ -41,7 +41,7 @@ export default function ConsoleShell({
 
         <div className="flex flex-col">
           <TopBar
-            appVersion="v1.1.0"
+            appVersion="v1.2.0"
             operatorLabel={operator?.display_name || subjectId || "—"}
             operatorProfileLabel={profileLabelFor(operator)}
             operatorUsername={usernameFor(operator, subjectId)}
