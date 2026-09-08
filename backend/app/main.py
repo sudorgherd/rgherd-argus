@@ -15,6 +15,23 @@ from starlette.middleware.sessions import SessionMiddleware
 from .core.config import BOOT_CONFIG
 from .auth import oauth
 from .database import SessionLocal, engine
+from .core_operations import (
+    ALLOWED_CATEGORIES,
+    ALLOWED_PROFESSIONAL_ESCALATION,
+    ALLOWED_SEVERITIES,
+    ALLOWED_STATUSES,
+    ALLOWED_VERIFICATION_STATES,
+    create_assignment_in_transaction,
+    create_record_in_transaction,
+    delete_assignment_in_transaction,
+    set_record_lifecycle_in_transaction,
+)
+from .module_host import (
+    ArgusModuleHost,
+    CoreModels,
+)
+from .module_host.api import create_module_api_router, make_require_module_enabled
+from .module_host.registry import ModuleRegistry, discover_installed_modules
 from .models import Record as RecordModel, RecordAssignment as RecordAssignmentModel, RecordNote as RecordNoteModel, AuditEvent as AuditEventModel, SystemAuditEvent as SystemAuditEventModel, Base, Responder, ResponderZone, SystemSetting, Zone
 from .matrix_config import MATRIX_CONFIG, MatrixConfig
 from .record_activity import (
@@ -34,46 +51,6 @@ app.add_middleware(
     same_site="lax",
     https_only=True,
 )
-
-ALLOWED_CATEGORIES = {
-    "Safety / Threat / Health",
-    "Basic Needs (Shelter / Food / Supplies)",
-    "Escort / Transport",
-    "Legal Support / Observer",
-    "Logistics / Coordination",
-    "Other Support",
-}
-
-ALLOWED_SEVERITIES = {
-    "Low",
-    "Medium",
-    "High",
-    "Critical",
-}
-
-ALLOWED_PROFESSIONAL_ESCALATION = {
-    "yes",
-    "no",
-    "unknown",
-}
-
-ALLOWED_STATUSES = {
-    "new",
-    "under_review",
-    "notified",
-    "assigned",
-    "active",
-    "resolved",
-    "closed",
-}
-
-ALLOWED_VERIFICATION_STATES = {
-    "pending",
-    "unverified",
-    "verified",
-    "not_applicable",
-}
-
 
 ALLOWED_RESPONDER_AVAILABILITY = {
     "Available",
@@ -372,6 +349,36 @@ def require_admin_subject_id(
     if not responder.is_admin:
         raise HTTPException(status_code=403, detail="Admin permission required")
     return responder.subject_id
+
+
+def require_dispatch_responder(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Responder:
+    responder = get_current_responder(request, db)
+    if not (responder.is_admin or responder.can_dispatch):
+        raise HTTPException(status_code=403, detail="Dispatch permission required")
+    return responder
+
+
+def require_respond_responder(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Responder:
+    responder = get_current_responder(request, db)
+    if not (responder.is_admin or responder.can_respond):
+        raise HTTPException(status_code=403, detail="Responder permission required")
+    return responder
+
+
+def require_admin_responder(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Responder:
+    responder = get_current_responder(request, db)
+    if not responder.is_admin:
+        raise HTTPException(status_code=403, detail="Admin permission required")
+    return responder
 
 
 def responder_is_assigned_to_record(
@@ -824,55 +831,22 @@ def delete_record_assignment(
     subject_id: str = Depends(require_dispatch_subject_id),
     db: Session = Depends(get_db),
 ):
-    record = db.query(RecordModel).filter(RecordModel.id == record_id).first()
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    ensure_record_not_archived(record)
-
-    assignment = (
-        db.query(RecordAssignmentModel)
-        .filter(
-            RecordAssignmentModel.id == assignment_id,
-            RecordAssignmentModel.record_id == record_id,
-        )
-        .first()
-    )
-    if not assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
-
-    deleted_assignment = {
-        "id": assignment.id,
-        "record_id": assignment.record_id,
-        "responder_id": assignment.responder_id,
-        "assignment_state": assignment.assignment_state,
-        "assigned_by": assignment.assigned_by,
-        "assigned_at": serialize_utc_datetime(assignment.assigned_at),
-        "cleared_at": serialize_utc_datetime(assignment.cleared_at),
-        "dispatcher_note": assignment.dispatcher_note,
-    }
-
-    write_audit_event(
-        db=db,
-        actor_id=subject_id,
-        event_type="responder_unassigned",
+    deleted = delete_canonical_assignment(
+        db,
         record_id=record_id,
-        event_metadata={
-            "assignment_id": assignment.id,
-            "responder_id": assignment.responder_id,
-            "assignment_state": assignment.assignment_state,
-            "dispatcher_note": assignment.dispatcher_note,
-        },
+        assignment_id=assignment_id,
+        actor_id=subject_id,
     )
-
-    bump_record_activity(db, record, subject_id)
-    db.delete(assignment)
     db.commit()
-
     return {
         "ok": True,
         "record_id": record_id,
         "assignment_id": assignment_id,
-        "deleted_assignment": deleted_assignment,
+        "deleted_assignment": {
+            **deleted,
+            "assigned_at": serialize_utc_datetime(deleted["assigned_at"]),
+            "cleared_at": serialize_utc_datetime(deleted["cleared_at"]),
+        },
     }
 
 
@@ -2752,6 +2726,90 @@ def update_record_assignment(
     return serialize_assignment_responder(assignment)
 
 
+def create_canonical_record(
+    db: Session,
+    values: dict[str, Any],
+    *,
+    actor_id: str,
+) -> RecordModel:
+    return create_record_in_transaction(
+        db,
+        values,
+        actor_id=actor_id,
+        notify=auto_send_record_to_zone,
+    )
+
+
+def _notify_assignment(
+    db: Session,
+    record: RecordModel,
+    responder: Responder,
+    dispatcher_note: str | None,
+) -> dict[str, Any]:
+    body = build_matrix_message_body(
+        record,
+        zone=(
+            db.query(Zone).filter(Zone.id == record.zone_id).first()
+            if record.zone_id
+            else None
+        ),
+        header="ARGUS Assignment",
+        dispatcher_note=dispatcher_note,
+    )
+    return send_matrix_direct_message(db=db, responder=responder, body=body)
+
+
+def create_canonical_assignment(
+    db: Session,
+    *,
+    record_id: int,
+    responder_id: int,
+    actor_id: str,
+    dispatcher_note: str | None = None,
+) -> tuple[RecordAssignmentModel, dict[str, Any] | None]:
+    return create_assignment_in_transaction(
+        db,
+        record_id=record_id,
+        responder_id=responder_id,
+        actor_id=actor_id,
+        dispatcher_note=dispatcher_note,
+        get_presence=get_effective_presence,
+        notify=_notify_assignment,
+    )
+
+
+def delete_canonical_assignment(
+    db: Session,
+    *,
+    record_id: int,
+    assignment_id: int,
+    actor_id: str,
+) -> dict[str, Any]:
+    return delete_assignment_in_transaction(
+        db,
+        record_id=record_id,
+        assignment_id=assignment_id,
+        actor_id=actor_id,
+    )
+
+
+def set_canonical_record_lifecycle(
+    db: Session,
+    *,
+    record_id: int,
+    status: str,
+    actor_id: str,
+    closure: dict[str, Any] | None = None,
+) -> RecordModel:
+    return set_record_lifecycle_in_transaction(
+        db,
+        record_id=record_id,
+        status=status,
+        actor_id=actor_id,
+        closure=closure,
+    )
+
+
 @app.post("/api/records/{record_id}/assignments", status_code=201)
 def create_record_assignment(
     record_id: int,
@@ -2759,108 +2817,17 @@ def create_record_assignment(
     subject_id: str = Depends(require_dispatch_subject_id),
     db: Session = Depends(get_db),
 ):
-    record = db.query(RecordModel).filter(RecordModel.id == record_id).first()
-    if not record:
-        raise HTTPException(status_code=404, detail="Record not found")
-    ensure_record_not_archived(record)
-
-    responder = db.query(Responder).filter(Responder.id == payload.responder_id).first()
-    if not responder:
-        raise HTTPException(status_code=404, detail="Responder not found")
-
-    if not responder.is_active:
-        raise HTTPException(status_code=400, detail="Responder is inactive")
-
-    effective_presence = get_effective_presence(responder, db)
-    if effective_presence == "Offline":
-        raise HTTPException(status_code=400, detail="Responder is offline")
-
-    existing = (
-        db.query(RecordAssignmentModel)
-        .filter(
-            RecordAssignmentModel.record_id == record_id,
-            RecordAssignmentModel.responder_id == payload.responder_id,
-        )
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=409, detail="Responder already assigned to this record")
-
-    assignment = RecordAssignmentModel(
+    assignment, assignment_send_result = create_canonical_assignment(
+        db,
         record_id=record_id,
         responder_id=payload.responder_id,
-        assignment_state="assigned",
-        assigned_by=subject_id,
-        assigned_at=datetime.utcnow(),
+        actor_id=subject_id,
         dispatcher_note=payload.dispatcher_note,
     )
-
-    db.add(assignment)
-    db.flush()
-
-    bump_record_activity(db, record, subject_id)
-
-    write_audit_event(
-        db=db,
-        actor_id=subject_id,
-        event_type="responder_assigned",
-        record_id=record_id,
-        event_metadata={
-            "assignment_id": assignment.id,
-            "responder_id": responder.id,
-            "assignment_state": assignment.assignment_state,
-            "dispatcher_note": assignment.dispatcher_note,
-        },
-    )
-
-    assignment_send_result = None
-    try:
-        body = build_matrix_message_body(
-            record,
-            zone=db.query(Zone).filter(Zone.id == record.zone_id).first() if record.zone_id else None,
-            header="ARGUS Assignment",
-            dispatcher_note=payload.dispatcher_note,
-        )
-        assignment_send_result = send_matrix_direct_message(
-            db=db,
-            responder=responder,
-            body=body,
-        )
-    except Exception as exc:
-        assignment_send_result = {
-            "ok": False,
-            "reason": "matrix_send_exception",
-            "detail": str(exc),
-            "responder_id": responder.id,
-            "matrix_user_id": responder.matrix_user_id,
-            "dm_room_id": responder.dm_room_id,
-        }
-
-    write_audit_event(
-        db=db,
-        actor_id=subject_id,
-        event_type="matrix_assignment_auto_send",
-        record_id=record_id,
-        event_metadata={
-            "assignment_id": assignment.id,
-            "responder_id": responder.id,
-            **(assignment_send_result or {"ok": False, "reason": "no_result"}),
-        },
-    )
-
     db.commit()
     db.refresh(assignment)
-    db.refresh(responder)
-
     return {
-        "id": assignment.id,
-        "record_id": assignment.record_id,
-        "responder_id": assignment.responder_id,
-        "assignment_state": assignment.assignment_state,
-        "assigned_by": assignment.assigned_by,
-        "assigned_at": serialize_utc_datetime(assignment.assigned_at),
-        "cleared_at": serialize_utc_datetime(assignment.cleared_at),
-        "dispatcher_note": assignment.dispatcher_note,
+        **serialize_assignment(assignment),
         "matrix_send_result": assignment_send_result,
     }
 
@@ -3044,86 +3011,14 @@ def create_record(
     subject_id: str = Depends(require_dispatch_subject_id),
     db: Session = Depends(get_db),
 ):
-    if payload.category not in ALLOWED_CATEGORIES:
-        raise HTTPException(status_code=400, detail="Invalid category")
-
-    if payload.severity not in ALLOWED_SEVERITIES:
-        raise HTTPException(status_code=400, detail="Invalid severity")
-
-    if payload.professional_escalation is not None and payload.professional_escalation not in ALLOWED_PROFESSIONAL_ESCALATION:
-        raise HTTPException(status_code=400, detail="Invalid professional_escalation value")
-
-    if (
-        payload.active_response
-        and payload.category == "Safety / Threat / Health"
-        and payload.professional_escalation is None
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="professional_escalation is required for Safety / Threat / Health when active_response is true",
-        )
-
-    new_record = RecordModel(
-        summary=payload.summary.strip(),
-        category=payload.category,
-        severity=payload.severity,
-        active_response=payload.active_response,
-        professional_escalation=payload.professional_escalation,
-        location=(payload.location.strip() if payload.location else None),
-        zone_id=payload.zone_id,
-        source_type=(payload.source_type.strip() if payload.source_type else None),
-        internal_notes_summary=(
-            payload.internal_notes_summary.strip()
-            if payload.internal_notes_summary else None
-        ),
-        status="new",
-        verification_state=(payload.verification_state or "pending"),
-        created_by=subject_id,
-    )
-
-    db.add(new_record)
-    db.flush()
-
-    mark_record_activity_seen_by_subject(db, new_record, subject_id)
-
-    write_audit_event(
-        db=db,
+    record = create_canonical_record(
+        db,
+        payload.model_dump(),
         actor_id=subject_id,
-        event_type="record_created",
-        record_id=new_record.id,
-        event_metadata={
-            "category": new_record.category,
-            "severity": new_record.severity,
-            "active_response": new_record.active_response,
-            "status": new_record.status,
-            "verification_state": new_record.verification_state,
-        },
     )
-
-    zone_send_result = None
-    try:
-        zone_send_result = auto_send_record_to_zone(db, new_record)
-    except Exception as exc:
-        zone_send_result = {
-            "ok": False,
-            "reason": "matrix_send_exception",
-            "detail": str(exc),
-            "zone_id": new_record.zone_id,
-        }
-
-    if zone_send_result is not None:
-        write_audit_event(
-            db=db,
-            actor_id=subject_id,
-            event_type="matrix_zone_auto_send",
-            record_id=new_record.id,
-            event_metadata=zone_send_result,
-        )
-
     db.commit()
-    db.refresh(new_record)
-
-    return serialize_record(new_record, has_unseen_activity=False)
+    db.refresh(record)
+    return serialize_record(record, has_unseen_activity=False)
 
 
 @app.patch("/api/records/{record_id}")
@@ -3480,3 +3375,43 @@ def purge_record(
     db.commit()
 
     return {"ok": True, "record_id": record_id}
+
+
+# Installed modules are registered only after all canonical host operations and
+# dependencies exist. With no configured directory, ARGUS behaves as core-only.
+ARGUS_MODULE_REGISTRY = ModuleRegistry()
+require_module_enabled = make_require_module_enabled(ARGUS_MODULE_REGISTRY, get_db)
+ARGUS_MODULE_HOST = ArgusModuleHost(
+    models=CoreModels(
+        base=Base,
+        record=RecordModel,
+        assignment=RecordAssignmentModel,
+        responder=Responder,
+        zone=Zone,
+        audit_event=AuditEventModel,
+    ),
+    get_db=get_db,
+    require_current_responder=require_authorized_responder,
+    require_admin_responder=require_admin_responder,
+    require_dispatch_responder=require_dispatch_responder,
+    require_respond_responder=require_respond_responder,
+    require_module_enabled=require_module_enabled,
+    create_record=create_canonical_record,
+    create_assignment=create_canonical_assignment,
+    delete_assignment=delete_canonical_assignment,
+    set_record_lifecycle=set_canonical_record_lifecycle,
+)
+app.include_router(
+    create_module_api_router(
+        registry=ARGUS_MODULE_REGISTRY,
+        get_db=get_db,
+        require_current_responder=require_authorized_responder,
+        require_admin_responder=require_admin_responder,
+    ),
+)
+discover_installed_modules(
+    app,
+    host=ARGUS_MODULE_HOST,
+    registry=ARGUS_MODULE_REGISTRY,
+    modules_dir=BOOT_CONFIG.modules_dir,
+)

@@ -5,6 +5,7 @@ import { availabilityTone, presenceTone } from "../../constants/ui";
 import { formatDateTime, responderLabel, safeArray } from "../../utils/display";
 import { Panel } from "../../components/ui";
 import ZonesPanel from "../zones/ZonesPanel";
+import ModulesPanel from "../host/ModulesPanel";
 import {
   createResponder,
   deleteResponder as deleteResponderApi,
@@ -778,6 +779,7 @@ export default function AdminPanel({ responders = [], zones = [], onResponderSav
 
   return (
     <section className="space-y-4">
+      <ModulesPanel />
       <Panel
         title="System Settings"
         subtitle="Global ARGUS operator behavior"

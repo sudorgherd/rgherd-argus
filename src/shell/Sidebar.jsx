@@ -25,19 +25,23 @@ export default function Sidebar({ activeNav, onSelect, navItems = [] }) {
         </div>
 
         <nav className="space-y-1">
-          {navItems.map((item) => (
+          {navItems.map((item) => {
+            const id = typeof item === "string" ? item : item.id;
+            const label = typeof item === "string" ? item : item.label;
+            return (
             <button
-              key={item}
-              onClick={() => onSelect(item)}
+              key={id}
+              onClick={() => onSelect(id)}
               className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-                activeNav === item
+                activeNav === id
                   ? "bg-emerald-500/15 text-emerald-200"
                   : "text-slate-300 hover:bg-slate-800/70"
               }`}
             >
-              {item}
+              {label}
             </button>
-          ))}
+            );
+          })}
         </nav>
       </aside>
 

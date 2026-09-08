@@ -74,7 +74,7 @@ def test_migration_head_follows_canonical_head():
         "script_location",
         str(Path(__file__).resolve().parents[1] / "alembic"),
     )
-    assert ScriptDirectory.from_config(config).get_heads() == ["c7f2a6d9e104"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["e2f6b44d8c91"]
 
 
 def test_migration_creates_version_view_state_and_unique_constraint(monkeypatch):

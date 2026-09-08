@@ -95,6 +95,22 @@ Build frontend assets:
 
     npm run build
 
+## Installed modules
+
+ARGUS includes a small generic host for optional deployment-installed modules.
+Set `ARGUS_MODULES_DIR` to a directory whose immediate child packages expose
+an `argus_module.py` entrypoint with `register(host)`. Backend routers run in
+the ARGUS FastAPI process and use explicit host dependencies and commit-free
+core operations.
+
+Frontend module manifests are copied at build time into the Git-ignored
+`src/modules/installed/` directory. Vite compiles them into the one ARGUS
+console. Administrators enable and disable discovered modules from Admin →
+Modules; disabling preserves module data and leaves core ARGUS operational.
+
+The public repository contains the generic host contract and loader only.
+Deployment-specific installed module code is not committed here.
+
 ## Deployment
 
 See:

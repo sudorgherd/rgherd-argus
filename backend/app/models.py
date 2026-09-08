@@ -46,6 +46,27 @@ class SystemSetting(Base):
     )
 
 
+class ArgusModuleState(Base):
+    """Persisted enablement for deployment-discovered ARGUS modules."""
+
+    __tablename__ = "argus_module_states"
+
+    module_id = Column(String, primary_key=True)
+    enabled = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    installed_version = Column(String, nullable=False)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
 class Responder(Base):
     __tablename__ = "responders"
 

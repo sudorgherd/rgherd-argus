@@ -177,6 +177,7 @@ async function fulfillJson(route, payload, status = 200) {
 async function installMockApi(page, viewedRecordIds = [], failViewAcknowledgement = false) {
   const browserErrors = [];
   const servedRecords = records.map((record) => ({ ...record }));
+  let exampleModuleEnabled = false;
 
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -337,6 +338,44 @@ async function installMockApi(page, viewedRecordIds = [], failViewAcknowledgemen
       });
     }
 
+    if (method === "GET" && pathname === "/api/modules") {
+      return fulfillJson(route, {
+        count: exampleModuleEnabled ? 1 : 0,
+        modules: exampleModuleEnabled
+          ? [{ module_id: "example_tools", name: "Example Tools", version: "1.0.0", enabled: true }]
+          : [],
+      });
+    }
+
+    if (method === "GET" && pathname === "/api/admin/modules") {
+      return fulfillJson(route, {
+        count: 1,
+        modules: [{
+          module_id: "example_tools",
+          name: "Example Tools",
+          description: "Generic deployment extension",
+          version: "1.0.0",
+          enabled: exampleModuleEnabled,
+          health: { status: "ok" },
+          migration_status: { status: "current" },
+        }],
+        discovery_failures: [],
+      });
+    }
+
+    if (method === "PATCH" && pathname === "/api/admin/modules/example_tools") {
+      exampleModuleEnabled = Boolean(JSON.parse(request.postData() || "{}").enabled);
+      return fulfillJson(route, {
+        module_id: "example_tools",
+        name: "Example Tools",
+        description: "Generic deployment extension",
+        version: "1.0.0",
+        enabled: exampleModuleEnabled,
+        health: { status: "ok" },
+        migration_status: { status: "current" },
+      });
+    }
+
     return fulfillJson(route, { ok: true });
   });
 
@@ -466,4 +505,17 @@ test("failed acknowledgement preserves selection and unseen highlight", async ({
   await expect(page.getByText("UPDATED", { exact: true })).toBeVisible();
   expect(viewedRecordIds).toEqual([101]);
   expect(browserErrors).toEqual([expect.stringContaining("500")]);
+});
+
+test("admin manages deployment-installed modules from the ARGUS console", async ({ page }) => {
+  const browserErrors = await installMockApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Admin", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Modules", exact: true })).toBeVisible();
+  const moduleCard = page.getByRole("article").filter({ hasText: "Example Tools" });
+  await expect(moduleCard.getByText("Example Tools", { exact: true })).toBeVisible();
+  await expect(moduleCard.getByText("Disabled", { exact: true })).toBeVisible();
+  await moduleCard.getByRole("button", { name: "Enable", exact: true }).click();
+  await expect(moduleCard.getByText("Enabled", { exact: true })).toBeVisible();
+  expect(browserErrors).toEqual([]);
 });

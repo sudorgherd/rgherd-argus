@@ -4,6 +4,7 @@ export function useAccessNavigation({
   activeDetailTab,
   meCapabilities,
   meResponder,
+  moduleNavItems = [],
   responders,
   setActiveDetailTab,
   setActiveNav,
@@ -22,8 +23,9 @@ export function useAccessNavigation({
   const canRespond = Boolean(meCapabilities.can_respond || isAdmin);
 
   const allowedNavItems = useMemo(() => {
+    let coreItems;
     if (isAdmin) {
-      return [
+      coreItems = [
         "Active Queue",
         "Dispatch Queue",
         "Report Intake",
@@ -34,10 +36,8 @@ export function useAccessNavigation({
         "Archived Records",
         "Admin",
       ];
-    }
-
-    if (canDispatch && canRespond) {
-      return [
+    } else if (canDispatch && canRespond) {
+      coreItems = [
         "Active Queue",
         "Dispatch Queue",
         "Report Intake",
@@ -47,10 +47,8 @@ export function useAccessNavigation({
         "Closed Records",
         "Archived Records",
       ];
-    }
-
-    if (canDispatch) {
-      return [
+    } else if (canDispatch) {
+      coreItems = [
         "Active Queue",
         "Dispatch Queue",
         "Report Intake",
@@ -59,14 +57,13 @@ export function useAccessNavigation({
         "Closed Records",
         "Archived Records",
       ];
+    } else if (canRespond) {
+      coreItems = ["Responder Interface"];
+    } else {
+      coreItems = [];
     }
-
-    if (canRespond) {
-      return ["Responder Interface"];
-    }
-
-    return [];
-  }, [canDispatch, canRespond, isAdmin]);
+    return [...coreItems, ...moduleNavItems];
+  }, [canDispatch, canRespond, isAdmin, moduleNavItems]);
 
   useEffect(() => {
     if (allowedNavItems.length === 0) {
@@ -76,6 +73,14 @@ export function useAccessNavigation({
 
     setActiveNav((current) => {
       if (allowedNavItems.includes(current)) return current;
+      if (
+        allowedNavItems.some(
+          (item) => typeof item === "object" && item.id === current,
+        )
+      ) return current;
+      if (typeof current === "string" && current.startsWith("module:")) {
+        return current;
+      }
       if (canDispatch) return "Active Queue";
       if (canRespond) return "Responder Interface";
       return allowedNavItems[0];
