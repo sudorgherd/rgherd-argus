@@ -4,6 +4,7 @@ export function useAccessNavigation({
   activeDetailTab,
   meCapabilities,
   meResponder,
+  moduleFocusActive = false,
   moduleNavItems = [],
   responders,
   setActiveDetailTab,
@@ -62,8 +63,15 @@ export function useAccessNavigation({
     } else {
       coreItems = [];
     }
-    return [...coreItems, ...moduleNavItems];
-  }, [canDispatch, canRespond, isAdmin, moduleNavItems]);
+    if (moduleFocusActive) {
+      return [
+        ...moduleNavItems,
+        ...(isAdmin ? ["Admin"] : []),
+      ];
+    }
+
+    return coreItems;
+  }, [canDispatch, canRespond, isAdmin, moduleFocusActive, moduleNavItems]);
 
   useEffect(() => {
     if (allowedNavItems.length === 0) {
@@ -78,14 +86,23 @@ export function useAccessNavigation({
           (item) => typeof item === "object" && item.id === current,
         )
       ) return current;
-      if (typeof current === "string" && current.startsWith("module:")) {
-        return current;
+      if (moduleFocusActive && moduleNavItems.length > 0) {
+        return moduleNavItems[0].id;
       }
+      if (isAdmin && moduleFocusActive) return "Admin";
       if (canDispatch) return "Active Queue";
       if (canRespond) return "Responder Interface";
       return allowedNavItems[0];
     });
-  }, [allowedNavItems, canDispatch, canRespond, setActiveNav]);
+  }, [
+    allowedNavItems,
+    canDispatch,
+    canRespond,
+    isAdmin,
+    moduleFocusActive,
+    moduleNavItems,
+    setActiveNav,
+  ]);
 
   useEffect(() => {
     if (!canDispatch && activeDetailTab === "Audit") {
