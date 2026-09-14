@@ -31,6 +31,9 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Test frontend module isolation
+        run: npm run test:unit
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -38,3 +41,10 @@ jobs:
 
       - name: Compile backend Python
         run: python -m compileall -q backend/app backend/alembic
+
+      - name: Install backend test dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
+
+      - name: Test backend
+        working-directory: backend
+        run: python -m pytest -q

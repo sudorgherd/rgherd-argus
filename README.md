@@ -11,7 +11,7 @@ ARGUS uses a FastAPI backend, PostgreSQL, a React/Vite frontend, MAS/OIDC authen
 
 ## Current status
 
-This repository contains the public source release of ARGUS version `v1.2.0`.
+This repository contains the ARGUS version `v1.3.0` release candidate.
 
 ARGUS is under active development. It is not yet a polished one-command installer, and deployments should be reviewed carefully before operational use.
 
@@ -100,8 +100,10 @@ Build frontend assets:
 ARGUS includes a small generic host for optional deployment-installed modules.
 Set `ARGUS_MODULES_DIR` to a directory whose immediate child packages expose
 an `argus_module.py` entrypoint with `register(host)`. Backend routers run in
-the ARGUS FastAPI process and use explicit host dependencies and commit-free
-core operations.
+the ARGUS FastAPI process. ARGUS now attaches authenticated, approved, active
+responder and enabled-module guards to every installed router; modules add any
+stronger dispatch/respond/admin capability dependency they require. Public
+module endpoints are not supported in v1.3.
 
 Frontend module manifests are copied at build time into the Git-ignored
 `src/modules/installed/` directory. Vite compiles them into the one ARGUS
@@ -110,6 +112,8 @@ Modules; disabling preserves module data and leaves core ARGUS operational.
 
 The public repository contains the generic host contract and loader only.
 Deployment-specific installed module code is not committed here.
+See `docs/installed-modules.md` for the complete host contract and compatibility
+requirements.
 
 ## Deployment
 

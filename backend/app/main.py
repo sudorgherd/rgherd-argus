@@ -24,6 +24,10 @@ from .core_operations import (
     create_assignment_in_transaction,
     create_record_in_transaction,
     delete_assignment_in_transaction,
+    ensure_record_working,
+    normalize_utc_datetime,
+    responder_is_assignment_eligible,
+    responder_is_current_operational,
     set_record_lifecycle_in_transaction,
 )
 from .module_host import (
@@ -83,6 +87,11 @@ class RecordCreate(BaseModel):
     source_type: str | None = None
     location: str | None = None
     zone_id: int | None = None
+    occurrence_time: datetime | None = None
+    reporter_name: str | None = None
+    reporter_alias: str | None = None
+    reporter_contact: str | None = None
+    callback_allowed: bool | None = None
     internal_notes_summary: str | None = None
 
 
@@ -94,6 +103,11 @@ class RecordUpdate(BaseModel):
     active_response: bool | None = None
     professional_escalation: str | None = None
     location: str | None = None
+    occurrence_time: datetime | None = None
+    reporter_name: str | None = None
+    reporter_alias: str | None = None
+    reporter_contact: str | None = None
+    callback_allowed: bool | None = None
     responder_instructions: str | None = None
     internal_notes_summary: str | None = None
 
@@ -300,7 +314,7 @@ def get_current_responder(
         .first()
     )
 
-    if not responder or not responder.is_approved:
+    if not responder or not responder.is_approved or not responder.is_active:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     return responder
@@ -398,6 +412,25 @@ def responder_is_assigned_to_record(
     )
 
 
+def responder_has_operational_assignment(
+    db: Session,
+    subject_id: str,
+    record_id: int,
+) -> bool:
+    return (
+        db.query(RecordAssignmentModel)
+        .join(Responder, RecordAssignmentModel.responder_id == Responder.id)
+        .filter(
+            RecordAssignmentModel.record_id == record_id,
+            RecordAssignmentModel.assignment_state.in_(("assigned", "active")),
+            RecordAssignmentModel.cleared_at.is_(None),
+            Responder.subject_id == subject_id,
+        )
+        .first()
+        is not None
+    )
+
+
 def responder_is_zone_visible_for_record(
     db: Session,
     subject_id: str,
@@ -444,11 +477,6 @@ def require_note_access_subject_id(
     raise HTTPException(status_code=403, detail="Assigned responder or dispatch permission required")
 
 
-def ensure_record_not_archived(record: RecordModel):
-    if record.archived_at is not None:
-        raise HTTPException(status_code=400, detail="Archived records are read-only")
-
-
 def serialize_utc_datetime(value):
     if not value:
         return None
@@ -475,6 +503,10 @@ def serialize_record(
         "zone_id": record.zone_id,
         "source_type": record.source_type,
         "occurrence_time": serialize_utc_datetime(record.occurrence_time),
+        "reporter_name": record.reporter_name,
+        "reporter_alias": record.reporter_alias,
+        "reporter_contact": record.reporter_contact,
+        "callback_allowed": record.callback_allowed,
         "created_by": record.created_by,
         "created_at": serialize_utc_datetime(record.created_at),
         "updated_at": serialize_utc_datetime(record.updated_at),
@@ -813,8 +845,12 @@ def serialize_assignment(assignment: RecordAssignmentModel) -> dict:
     }
 
 
-def serialize_assignment_responder(assignment: RecordAssignmentModel) -> dict:
-    return {
+def serialize_assignment_responder(
+    assignment: RecordAssignmentModel,
+    *,
+    include_dispatcher_note: bool = False,
+) -> dict:
+    serialized = {
         "id": assignment.id,
         "record_id": assignment.record_id,
         "responder_id": assignment.responder_id,
@@ -822,6 +858,9 @@ def serialize_assignment_responder(assignment: RecordAssignmentModel) -> dict:
         "assigned_at": serialize_utc_datetime(assignment.assigned_at),
         "cleared_at": serialize_utc_datetime(assignment.cleared_at),
     }
+    if include_dispatcher_note:
+        serialized["dispatcher_note"] = assignment.dispatcher_note
+    return serialized
 
 
 @app.delete("/api/records/{record_id}/assignments/{assignment_id}")
@@ -953,6 +992,8 @@ def normalize_matrix_escalation_value(value: str | None) -> str:
 
 
 def build_matrix_record_payload(record: RecordModel, zone: Zone | None = None) -> dict:
+    """Return the explicit, responder-safe allowlist used for Matrix messages."""
+
     return {
         "record_id": record.id,
         "summary": record.summary,
@@ -962,7 +1003,6 @@ def build_matrix_record_payload(record: RecordModel, zone: Zone | None = None) -
         "location": record.location,
         "safety_escalation_active": bool(record.active_response),
         "professional_escalation": normalize_matrix_escalation_value(record.professional_escalation),
-        "intake_note": (record.internal_notes_summary or "").strip() or None,
     }
 
 
@@ -1008,10 +1048,8 @@ def build_matrix_message_lines(record: RecordModel, zone: Zone | None = None, he
     lines.append(f"Record: {payload['record_id']}")
 
     note_value = (dispatcher_note or "").strip()
-    if payload["intake_note"] or note_value:
+    if note_value:
         lines.append("")
-    if payload["intake_note"]:
-        lines.append(f"Intake Note: {payload['intake_note']}")
     if note_value:
         lines.append(f"Dispatcher Note: {note_value}")
 
@@ -1311,14 +1349,15 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         ),
     )
 
-    now = datetime.utcnow()
-    responder.presence = "Online"
-    responder.last_seen_at = now
-    responder.updated_at = now
-    db.commit()
-    db.refresh(responder)
+    if responder.is_active:
+        now = datetime.utcnow()
+        responder.presence = "Online"
+        responder.last_seen_at = now
+        responder.updated_at = now
+        db.commit()
+        db.refresh(responder)
 
-    if responder.is_approved:
+    if responder.is_approved and responder.is_active:
         return RedirectResponse(url="/console")
 
     return RedirectResponse(url="/access-denied")
@@ -1357,6 +1396,7 @@ async def me(request: Request, db: Session = Depends(get_db)):
             "role": responder.role,
             "presence": responder.presence,
             "availability": responder.availability,
+            "is_active": responder.is_active,
             "is_approved": responder.is_approved,
             "is_admin": responder.is_admin,
             "can_dispatch": responder.can_dispatch,
@@ -1376,7 +1416,7 @@ async def console(request: Request, db: Session = Depends(get_db)):
         .first()
     )
 
-    if not responder or not responder.is_approved:
+    if not responder or not responder.is_approved or not responder.is_active:
         return RedirectResponse(url="/access-denied")
 
     if not os.path.isfile(FRONTEND_INDEX):
@@ -1746,10 +1786,10 @@ def get_responder_capacity(
     )
 
     def is_online(responder: Responder) -> bool:
-        return get_effective_presence(responder, db) == "Online"
+        return responder_is_current_operational(responder, db, get_effective_presence)
 
     def is_available(responder: Responder) -> bool:
-        return get_effective_presence(responder, db) == "Online" and responder.availability == "Available"
+        return responder_is_assignment_eligible(responder, db, get_effective_presence)
 
     overall_online = sum(1 for responder in responders if is_online(responder))
     overall_available = sum(1 for responder in responders if is_available(responder))
@@ -2475,7 +2515,13 @@ def get_record_assignments(
     else:
         if not responder_is_assigned_to_record(db, subject_id, record_id):
             raise HTTPException(status_code=403, detail="Assigned responder or dispatch permission required")
-        assignments = [serialize_assignment_responder(assignment) for assignment in results]
+        assignments = [
+            serialize_assignment_responder(
+                assignment,
+                include_dispatcher_note=assignment.responder_id == responder.id,
+            )
+            for assignment in results
+        ]
 
     return {
         "count": len(assignments),
@@ -2587,7 +2633,7 @@ def create_record_note(
     record = db.query(RecordModel).filter(RecordModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    ensure_record_not_archived(record)
+    ensure_record_working(record)
 
     body = (payload.body or "").strip()
     if not body:
@@ -2602,6 +2648,16 @@ def create_record_note(
         .filter(Responder.subject_id == subject_id)
         .first()
     )
+
+    if (
+        responder
+        and not (responder.is_admin or responder.can_dispatch)
+        and not responder_has_operational_assignment(db, subject_id, record_id)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Current assignment or dispatch permission required",
+        )
 
     if responder and (responder.is_admin or responder.can_dispatch):
         author_role = "Dispatcher"
@@ -2670,31 +2726,46 @@ def update_record_assignment(
     record = db.query(RecordModel).filter(RecordModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    ensure_record_not_archived(record)
+    ensure_record_working(record)
 
-    changed = False
+    if payload.assignment_state is not None and payload.mark_cleared:
+        raise HTTPException(status_code=400, detail="Submit exactly one assignment transition")
+    if payload.assignment_state is None and not payload.mark_cleared:
+        raise HTTPException(status_code=400, detail="No assignment changes submitted")
 
+    current_state = assignment.assignment_state
+    lifecycle_is_consistent = (
+        current_state == "cleared" and assignment.cleared_at is not None
+    ) or (
+        current_state in {"assigned", "active"} and assignment.cleared_at is None
+    )
+    if not lifecycle_is_consistent:
+        raise HTTPException(
+            status_code=409,
+            detail="Assignment lifecycle data is inconsistent",
+        )
     if payload.assignment_state is not None:
         requested_state = (payload.assignment_state or "").strip()
-
         if requested_state != "active":
             raise HTTPException(
                 status_code=400,
                 detail="Responders may only mark their own assignment active through this route",
             )
-
+        if current_state != "assigned":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Invalid assignment transition: {current_state} -> active",
+            )
         assignment.assignment_state = "active"
         assignment.cleared_at = None
-        changed = True
-
-    if payload.mark_cleared:
-        now = datetime.utcnow()
+    else:
+        if current_state != "active":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Invalid assignment transition: {current_state} -> cleared",
+            )
         assignment.assignment_state = "cleared"
-        assignment.cleared_at = now
-        changed = True
-
-    if not changed:
-        raise HTTPException(status_code=400, detail="No assignment changes submitted")
+        assignment.cleared_at = datetime.utcnow()
 
     db.add(assignment)
     db.flush()
@@ -2723,7 +2794,7 @@ def update_record_assignment(
     db.commit()
     db.refresh(assignment)
 
-    return serialize_assignment_responder(assignment)
+    return serialize_assignment_responder(assignment, include_dispatcher_note=True)
 
 
 def create_canonical_record(
@@ -2927,6 +2998,11 @@ def create_matrix_manual_alert(
         responder = db.query(Responder).filter(Responder.id == payload.responder_id).first()
         if not responder:
             raise HTTPException(status_code=404, detail="Responder not found")
+        if not responder_is_current_operational(responder, db, get_effective_presence):
+            raise HTTPException(
+                status_code=400,
+                detail="Responder is not a current online responder",
+            )
         send_to_responder(responder)
 
     elif destination == "all_online_responders":
@@ -2934,13 +3010,16 @@ def create_matrix_manual_alert(
             db.query(Responder)
             .filter(
                 Responder.is_active.is_(True),
-                Responder.presence == "Online",
+                Responder.is_approved.is_(True),
+                Responder.can_respond.is_(True),
                 Responder.matrix_user_id.isnot(None),
             )
             .order_by(Responder.display_name.asc(), Responder.id.asc())
             .all()
         )
         for responder in responders:
+            if not responder_is_current_operational(responder, db, get_effective_presence):
+                continue
             send_to_responder(responder)
 
     elif destination == "all_responders":
@@ -2948,6 +3027,8 @@ def create_matrix_manual_alert(
             db.query(Responder)
             .filter(
                 Responder.is_active.is_(True),
+                Responder.is_approved.is_(True),
+                Responder.can_respond.is_(True),
                 Responder.matrix_user_id.isnot(None),
             )
             .order_by(Responder.display_name.asc(), Responder.id.asc())
@@ -3031,16 +3112,19 @@ def update_record(
     record = db.query(RecordModel).filter(RecordModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    ensure_record_not_archived(record)
+    ensure_record_working(record)
 
     update_changes = {}
+
+    def audit_value(value):
+        return serialize_utc_datetime(value) if isinstance(value, datetime) else value
 
     def apply_record_change(field_name: str, new_value):
         old_value = getattr(record, field_name)
         if old_value != new_value:
             update_changes[field_name] = {
-                "from": old_value,
-                "to": new_value,
+                "from": audit_value(old_value),
+                "to": audit_value(new_value),
             }
         setattr(record, field_name, new_value)
 
@@ -3076,6 +3160,22 @@ def update_record(
 
     if payload.location is not None:
         apply_record_change("location", payload.location)
+
+    if "occurrence_time" in payload.model_fields_set:
+        apply_record_change("occurrence_time", normalize_utc_datetime(payload.occurrence_time))
+
+    for reporter_field in (
+        "reporter_name",
+        "reporter_alias",
+        "reporter_contact",
+    ):
+        if reporter_field in payload.model_fields_set:
+            value = getattr(payload, reporter_field)
+            normalized = (value.strip() or None) if value is not None else None
+            apply_record_change(reporter_field, normalized)
+
+    if "callback_allowed" in payload.model_fields_set:
+        apply_record_change("callback_allowed", payload.callback_allowed)
 
     if payload.responder_instructions is not None:
         apply_record_change("responder_instructions", payload.responder_instructions)
@@ -3116,6 +3216,11 @@ def update_record(
                 "active_response": record.active_response,
                 "professional_escalation": record.professional_escalation,
                 "location": record.location,
+                "occurrence_time": serialize_utc_datetime(record.occurrence_time),
+                "reporter_name": record.reporter_name,
+                "reporter_alias": record.reporter_alias,
+                "reporter_contact": record.reporter_contact,
+                "callback_allowed": record.callback_allowed,
                 "responder_instructions": record.responder_instructions,
                 "internal_notes_summary": record.internal_notes_summary,
             },
@@ -3141,7 +3246,7 @@ def close_record(
     record = db.query(RecordModel).filter(RecordModel.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    ensure_record_not_archived(record)
+    ensure_record_working(record)
 
     outcome_type = (payload.outcome_type or "").strip()
     outcome_notes = (payload.outcome_notes or "").strip()
@@ -3156,7 +3261,10 @@ def close_record(
         db.query(RecordAssignmentModel)
         .filter(
             RecordAssignmentModel.record_id == record_id,
-            RecordAssignmentModel.cleared_at.is_(None),
+            ~(
+                (RecordAssignmentModel.assignment_state == "cleared")
+                & RecordAssignmentModel.cleared_at.is_not(None)
+            ),
         )
         .count()
     )

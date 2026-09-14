@@ -21,11 +21,22 @@ Working records may be newly created, under review, notified, assigned, active, 
 
 Dispatchers and admins may update working records according to their capabilities. Responders may interact with working records only through their allowed responder paths.
 
+Responder assignment state follows one core graph:
+
+> `assigned -> active -> cleared`
+
+`cleared` is terminal. Repeated or skipped transitions do not create audit or
+activity history. Polls & Back or other modules may maintain richer domain
+progress separately; those states are not ARGUS assignment states.
+
 ## Closed
 
 A closed record is no longer active work, but remains visible in the closed-records view.
 
 Closure is a structured action. It should not be faked by a normal status update.
+Closed records are operationally read-only. Normal record edits, notes,
+assignment creation/deletion, and responder assignment-state changes require a
+reopen first.
 
 Closure requires closure fields such as:
 
@@ -55,6 +66,9 @@ Dispatchers and admins may reopen closed records that have not been archived.
 Reopen returns a closed record to active working state.
 
 Archived records cannot be reopened in v1.
+
+A cleared responder may retain historical read access through the existing
+assignment row. That history never restores note or assignment mutation rights.
 
 ## Archived
 

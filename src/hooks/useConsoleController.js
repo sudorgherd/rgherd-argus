@@ -14,9 +14,10 @@ import { useSelectedRecordDetail } from "./useSelectedRecordDetail";
 import { useModuleCatalog } from "../modules/host/useModuleCatalog";
 import {
   enabledModuleNavigation,
-  installedModuleManifests,
   isModuleNavigation,
+  loadInstalledModuleManifests,
 } from "../modules/moduleRegistry";
+import { isolateManifestState } from "../modules/moduleManifestRegistry";
 
 function navigationFromHash() {
   const match = window.location.hash.match(/^#\/modules\/([^/]+)\/([^/]+)$/);
@@ -67,16 +68,37 @@ export function useConsoleController() {
   const [responderNotesHistoryOpen, setResponderNotesHistoryOpen] = useState(false);
   const [matrixStatus, setMatrixStatus] = useState(null);
   const [systemAuditEvents, setSystemAuditEvents] = useState([]);
+  const [installedModuleState, setInstalledModuleState] = useState({
+    manifests: [],
+    failures: [],
+  });
 
   const moduleCatalog = useModuleCatalog(Boolean(meResponder));
+  useEffect(() => {
+    let active = true;
+    loadInstalledModuleManifests(moduleCatalog.catalog).then((loaded) => {
+      if (active) setInstalledModuleState(loaded);
+    });
+    return () => {
+      active = false;
+    };
+  }, [moduleCatalog.catalog]);
   const moduleNavItems = useMemo(
-    () => enabledModuleNavigation(moduleCatalog.catalog, meResponder),
-    [moduleCatalog.catalog, meResponder],
+    () => enabledModuleNavigation(
+      moduleCatalog.catalog,
+      meResponder,
+      installedModuleState.manifests,
+    ),
+    [installedModuleState.manifests, moduleCatalog.catalog, meResponder],
   );
   const moduleFocusActive = useMemo(
-    () => moduleCatalog.catalog.some((item) => item.enabled),
-    [moduleCatalog.catalog],
+    () => installedModuleState.manifests.length > 0,
+    [installedModuleState.manifests],
   );
+  const moduleIsolationActive = installedModuleState.failures.length > 0;
+  const isolateInstalledModule = useCallback((moduleId, error) => {
+    setInstalledModuleState((current) => isolateManifestState(current, moduleId, error));
+  }, []);
 
   useEffect(() => {
     const onHashChange = () => setActiveNavState(navigationFromHash());
@@ -94,6 +116,7 @@ export function useConsoleController() {
     meCapabilities,
     meResponder,
     moduleFocusActive,
+    moduleIsolationActive,
     moduleNavItems,
     responders,
     setActiveDetailTab,
@@ -317,7 +340,9 @@ export function useConsoleController() {
     meResponder,
     moduleRuntime: {
       catalog: moduleCatalog.catalog,
-      installedManifests: installedModuleManifests,
+      installedManifests: installedModuleState.manifests,
+      manifestFailures: installedModuleState.failures,
+      isolateModule: isolateInstalledModule,
       loading: moduleCatalog.loading,
       refresh: moduleCatalog.refresh,
     },

@@ -1,31 +1,10 @@
-const discoveredManifests = import.meta.glob(
-  "./installed/*/manifest.jsx",
-  { eager: true },
-);
+import { loadManifestSet } from "./moduleManifestRegistry";
 
-function validateManifest(manifest, source) {
-  if (!manifest || typeof manifest !== "object") {
-    throw new Error(`Invalid installed module manifest: ${source}`);
-  }
-  if (!/^[a-z][a-z0-9_-]{1,63}$/.test(manifest.moduleId || "")) {
-    throw new Error(`Invalid installed module ID: ${source}`);
-  }
-  if (!Array.isArray(manifest.navigation)) {
-    throw new Error(`Installed module navigation is required: ${source}`);
-  }
-  for (const entry of manifest.navigation) {
-    if (!entry?.id || !entry?.label || typeof entry.component !== "function") {
-      throw new Error(`Invalid installed module navigation entry: ${source}`);
-    }
-  }
-  return Object.freeze(manifest);
+const discoveredManifestLoaders = import.meta.glob("./installed/*/manifest.jsx");
+
+export function loadInstalledModuleManifests(catalog) {
+  return loadManifestSet(catalog, discoveredManifestLoaders);
 }
-
-export const installedModuleManifests = Object.freeze(
-  Object.entries(discoveredManifests)
-    .map(([source, loaded]) => validateManifest(loaded.default, source))
-    .sort((left, right) => left.moduleId.localeCompare(right.moduleId)),
-);
 
 export function moduleNavigationId(moduleId, viewId) {
   return `module:${moduleId}:${viewId}`;
@@ -47,11 +26,11 @@ export function capabilityAllows(capability, responder) {
   return capability == null || capability === "authenticated";
 }
 
-export function enabledModuleNavigation(catalog, responder) {
+export function enabledModuleNavigation(catalog, responder, manifests = []) {
   const enabledIds = new Set(
     (catalog || []).filter((item) => item.enabled).map((item) => item.module_id),
   );
-  return installedModuleManifests.flatMap((manifest) => {
+  return manifests.flatMap((manifest) => {
     if (!enabledIds.has(manifest.moduleId)) return [];
     return manifest.navigation
       .filter((entry) => capabilityAllows(entry.capability, responder))
@@ -63,10 +42,10 @@ export function enabledModuleNavigation(catalog, responder) {
   });
 }
 
-export function findInstalledModuleRoute(navigationId) {
+export function findInstalledModuleRoute(navigationId, manifests = []) {
   if (!isModuleNavigation(navigationId)) return null;
   const [, moduleId, viewId] = navigationId.split(":", 3);
-  const manifest = installedModuleManifests.find(
+  const manifest = manifests.find(
     (candidate) => candidate.moduleId === moduleId,
   );
   const entry = manifest?.navigation.find((candidate) => candidate.id === viewId);

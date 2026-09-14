@@ -16,6 +16,8 @@ These documents intentionally avoid deployment-specific secrets, live server pat
 - [`lifecycle.md`](lifecycle.md) — Working, closed, archived, purged, and authority rules.
 - [`matrix-integration.md`](matrix-integration.md) — Matrix notification model, zone routing, responder DMs, and privacy rules.
 - [`security-model.md`](security-model.md) — Public edge, auth, route protection, redaction, and deployment security assumptions.
+- [`installed-modules.md`](installed-modules.md) — Host-owned module security boundary and compatibility contract.
+- [`development-status.md`](development-status.md) — Concise current release and next-work orientation.
 - [`beta-readiness.md`](beta-readiness.md) — What beta-ready means, what it does not mean, and what should still be tested.
 
 ## Finalization note

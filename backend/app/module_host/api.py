@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from ..models import ArgusModuleState
+from ..models import ArgusModuleState, SystemAuditEvent
 from .registry import ModuleRegistry
 
 
@@ -146,7 +146,7 @@ def create_module_api_router(
     def update_module_state(
         module_id: str,
         payload: ModuleStateUpdate,
-        _responder=Depends(require_admin_responder),
+        responder=Depends(require_admin_responder),
         db: Session = Depends(get_db),
     ):
         registration = registry.get(module_id)
@@ -154,15 +154,43 @@ def create_module_api_router(
             raise HTTPException(status_code=404, detail="Module not discovered")
         try:
             state = db.get(ArgusModuleState, module_id)
+            previous_enabled = bool(state and state.enabled)
+            previous_version = state.installed_version if state else None
             if state is None:
                 state = ArgusModuleState(
                     module_id=module_id,
                     installed_version=registration.metadata.version,
                 )
                 db.add(state)
+            if previous_enabled == payload.enabled:
+                state.installed_version = registration.metadata.version
+                db.commit()
+                db.refresh(state)
+                return _module_payload(
+                    registration,
+                    state,
+                    include_status=True,
+                    db=db,
+                )
+            now = datetime.utcnow()
             state.enabled = payload.enabled
             state.installed_version = registration.metadata.version
-            state.updated_at = datetime.utcnow()
+            state.updated_at = now
+            db.add(
+                SystemAuditEvent(
+                    actor_id=responder.subject_id,
+                    event_type="module_state_changed",
+                    severity="high" if payload.enabled else "medium",
+                    event_metadata={
+                        "module_id": module_id,
+                        "previous_enabled": previous_enabled,
+                        "enabled": payload.enabled,
+                        "previous_installed_version": previous_version,
+                        "installed_version": registration.metadata.version,
+                    },
+                    created_at=now,
+                ),
+            )
             db.commit()
             db.refresh(state)
         except Exception:
