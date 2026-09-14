@@ -7,7 +7,7 @@ by ARGUS's HTTP routes. Callers own the surrounding transaction.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -49,6 +49,76 @@ AssignmentNotification = Callable[
     dict[str, Any] | None,
 ]
 PresenceResolver = Callable[[Responder, Session | None], str]
+
+
+def normalize_utc_datetime(value: Any) -> datetime | None:
+    """Normalize API/module timestamps to the naive UTC form used by the schema."""
+
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid occurrence_time") from exc
+    if not isinstance(value, datetime):
+        raise HTTPException(status_code=400, detail="Invalid occurrence_time")
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def responder_is_current_operational(
+    responder: Responder | None,
+    db: Session,
+    get_presence: PresenceResolver,
+    *,
+    require_online: bool = True,
+) -> bool:
+    """Return whether a responder may receive current operational work."""
+
+    if not responder:
+        return False
+    if not responder.is_approved or not responder.is_active or not responder.can_respond:
+        return False
+    return not require_online or get_presence(responder, db) == "Online"
+
+
+def responder_is_assignment_eligible(
+    responder: Responder | None,
+    db: Session,
+    get_presence: PresenceResolver,
+) -> bool:
+    return bool(
+        responder_is_current_operational(responder, db, get_presence)
+        and responder.availability == "Available"
+    )
+
+
+def require_responder_assignment_eligibility(
+    responder: Responder,
+    db: Session,
+    get_presence: PresenceResolver,
+) -> None:
+    """Raise a stable API error for the first failed eligibility dimension."""
+
+    if not responder.is_approved:
+        raise HTTPException(status_code=400, detail="Responder is not approved")
+    if not responder.is_active:
+        raise HTTPException(status_code=400, detail="Responder is inactive")
+    if not responder.can_respond:
+        raise HTTPException(status_code=400, detail="Responder is not response-capable")
+    if get_presence(responder, db) != "Online":
+        raise HTTPException(status_code=400, detail="Responder is not effectively online")
+    if responder.availability != "Available":
+        raise HTTPException(status_code=400, detail="Responder is not available")
+
+
+def ensure_record_working(record: Record) -> None:
+    if record.archived_at is not None:
+        raise HTTPException(status_code=400, detail="Archived records are read-only")
+    if record.status == "closed":
+        raise HTTPException(status_code=400, detail="Closed records are read-only")
 
 
 def _write_audit_event(
@@ -117,6 +187,17 @@ def create_record_in_transaction(
         source_type=(
             str(values["source_type"]).strip() if values.get("source_type") else None
         ),
+        occurrence_time=normalize_utc_datetime(values.get("occurrence_time")),
+        reporter_name=(
+            str(values["reporter_name"]).strip() if values.get("reporter_name") else None
+        ),
+        reporter_alias=(
+            str(values["reporter_alias"]).strip() if values.get("reporter_alias") else None
+        ),
+        reporter_contact=(
+            str(values["reporter_contact"]).strip() if values.get("reporter_contact") else None
+        ),
+        callback_allowed=values.get("callback_allowed"),
         internal_notes_summary=(
             str(values["internal_notes_summary"]).strip()
             if values.get("internal_notes_summary")
@@ -181,16 +262,12 @@ def create_assignment_in_transaction(
     record = db.query(Record).filter(Record.id == record_id).first()
     if record is None:
         raise HTTPException(status_code=404, detail="Record not found")
-    if record.archived_at is not None:
-        raise HTTPException(status_code=400, detail="Archived records are read-only")
+    ensure_record_working(record)
 
     responder = db.query(Responder).filter(Responder.id == responder_id).first()
     if responder is None:
         raise HTTPException(status_code=404, detail="Responder not found")
-    if not responder.is_active:
-        raise HTTPException(status_code=400, detail="Responder is inactive")
-    if get_presence(responder, db) == "Offline":
-        raise HTTPException(status_code=400, detail="Responder is offline")
+    require_responder_assignment_eligibility(responder, db, get_presence)
 
     existing = (
         db.query(RecordAssignment)
@@ -270,8 +347,7 @@ def delete_assignment_in_transaction(
     record = db.query(Record).filter(Record.id == record_id).first()
     if record is None:
         raise HTTPException(status_code=404, detail="Record not found")
-    if record.archived_at is not None:
-        raise HTTPException(status_code=400, detail="Archived records are read-only")
+    ensure_record_working(record)
 
     assignment = (
         db.query(RecordAssignment)
@@ -331,6 +407,11 @@ def set_record_lifecycle_in_transaction(
         raise HTTPException(status_code=400, detail="Archived records are read-only")
     if record.status == status:
         return record
+    if record.status == "closed":
+        raise HTTPException(
+            status_code=400,
+            detail="Closed records must be reopened through the canonical reopen route",
+        )
 
     previous_status = record.status
     if status == "closed":
@@ -338,7 +419,10 @@ def set_record_lifecycle_in_transaction(
             db.query(RecordAssignment)
             .filter(
                 RecordAssignment.record_id == record_id,
-                RecordAssignment.cleared_at.is_(None),
+                ~(
+                    (RecordAssignment.assignment_state == "cleared")
+                    & RecordAssignment.cleared_at.is_not(None)
+                ),
             )
             .count()
         )

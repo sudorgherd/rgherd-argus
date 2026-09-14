@@ -163,6 +163,17 @@ Matrix payloads must not include:
 - reporter contact information
 - internal-only notes
 - internal-only fields
+
+ARGUS constructs operational Matrix messages from an explicit safe-field
+allowlist. `internal_notes_summary`, reporter identity/contact, and other broad
+record serialization are never copied into automatic assignment, automatic
+record, module-triggered operational, or ordinary manual record alerts.
+
+Responder recipient selection requires approved, active, response-capable
+operators. The `all_online_responders` and single-responder paths additionally
+use timeout-decayed effective Online presence. Availability is intentionally
+not a Matrix messaging restriction: Busy or Away responders may still receive
+authorized communications.
 - dispatcher/admin-only context
 - fields not allowed by the recipient’s visibility level
 

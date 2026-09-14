@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.3.0
+
+- Made installed backend module routes fail closed with host-owned responder authentication, approval, active-account, and enabled-module enforcement.
+- Centralized current-responder and assignment-eligibility rules, including effective presence timeout handling.
+- Enforced the core assignment transition graph: `assigned -> active -> cleared`.
+- Separated historical assignment visibility from current mutation authority and made closed records operationally read-only.
+- Added responder-scoped dispatcher notes without widening same-zone disclosure.
+- Removed internal intake content from the explicit Matrix notification allowlist and hardened responder recipient selection.
+- Added atomic system-audit events for module enable/disable changes.
+- Isolated optional frontend module load, validation, and render failures from the core console.
+- Added dispatcher/admin API support for occurrence and reporter metadata while preserving responder redaction.
+- Added backend and frontend regression suites for the v1.3 hardening boundaries.
+
+## v1.2.0
+
+- Added the generic installed-module host, module discovery/state APIs, admin controls, frontend manifest integration, and commit-free canonical core operations for deployment-installed modules.
+
 ## v1.1.0
 
 - Added persistent per-user record activity highlights for dispatchers, admins, and responders.

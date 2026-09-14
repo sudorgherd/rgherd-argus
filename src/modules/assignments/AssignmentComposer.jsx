@@ -18,6 +18,10 @@ export default function AssignmentComposer({ recordId, responders, assignments, 
       (responders || []).filter(
         (responder) =>
           responder.is_active &&
+          responder.is_approved &&
+          responder.can_respond &&
+          responder.presence === "Online" &&
+          responder.availability === "Available" &&
           !assignedResponderIds.has(responder.id)
       ),
     [responders, assignedResponderIds]

@@ -1,3 +1,4 @@
+import { Component } from "react";
 import { Boxes, LockKeyhole } from "lucide-react";
 
 import { apiRequest } from "../../api/request";
@@ -9,7 +10,7 @@ import {
 } from "../moduleRegistry";
 
 export default function ModuleView({ activeNav, host, runtime }) {
-  const route = findInstalledModuleRoute(activeNav);
+  const route = findInstalledModuleRoute(activeNav, runtime.installedManifests);
   if (!route) {
     return (
       <Panel title="Module not available" icon={Boxes}>
@@ -45,16 +46,51 @@ export default function ModuleView({ activeNav, host, runtime }) {
 
   const Component = route.entry.component;
   return (
-    <Component
-      host={{
-        ...host,
-        apiRequest,
-        formatDateTime,
-        responderLabel,
-        safeArray,
-      }}
-      module={backendState}
-      routeId={route.entry.id}
-    />
+    <ModuleErrorBoundary
+      key={`${route.manifest.moduleId}:${route.entry.id}`}
+      onFailure={(error) => runtime.isolateModule(route.manifest.moduleId, error)}
+    >
+      <Component
+        host={{
+          ...host,
+          apiRequest,
+          formatDateTime,
+          responderLabel,
+          safeArray,
+        }}
+        module={backendState}
+        routeId={route.entry.id}
+      />
+    </ModuleErrorBoundary>
   );
+}
+
+class ModuleErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.error("Installed ARGUS module view failed", error);
+    this.props.onFailure(error);
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <Panel title="Module failed" icon={Boxes}>
+          <p role="alert" className="text-sm text-rose-200">
+            This optional module could not render. ARGUS core remains available;
+            an administrator can disable the module from Admin → Modules.
+          </p>
+        </Panel>
+      );
+    }
+    return this.props.children;
+  }
 }

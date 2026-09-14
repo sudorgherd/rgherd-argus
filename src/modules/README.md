@@ -14,3 +14,15 @@ same-origin request helper through a `host` prop.
 
 Installed modules are compiled into the one ARGUS frontend build. They do not
 bootstrap another console or authentication session.
+
+Only manifests whose backend module is enabled are imported at runtime. Each
+manifest is validated independently; malformed, mismatched, duplicate, or
+initialization-failing modules are omitted without preventing core console use.
+Module component render failures are contained by the host view boundary.
+
+Backend security is host-owned. Every discovered router receives the current
+ARGUS responder dependency and the module-enabled dependency. The current
+responder dependency requires an authenticated session and an approved, active
+local responder. A module must add dispatch, respond, admin, or narrower
+object-level authorization when its operation requires more authority. ARGUS
+v1.3 does not support public installed-module routes.

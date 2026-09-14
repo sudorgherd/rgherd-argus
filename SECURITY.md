@@ -1,10 +1,10 @@
 # Security Policy
 
-ARGUS v1.1.0 is the current public source release and remains under active development.
+ARGUS v1.3.0 is the current release candidate and remains under active development.
 
 ## Supported versions
 
-Version v1.1.0 is currently supported. Deployments should be reviewed carefully, and later tagged releases may revise the supported-version policy.
+Version v1.3.0 is the currently supported source line. Deployments should be reviewed carefully, and later tagged releases may revise the supported-version policy.
 
 ## Reporting security issues
 

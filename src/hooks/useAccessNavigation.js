@@ -1,10 +1,70 @@
 import { useEffect, useMemo } from "react";
 
+export function allowedNavigationForAccess({
+  isAdmin,
+  canDispatch,
+  canRespond,
+  moduleFocusActive = false,
+  moduleIsolationActive = false,
+  moduleNavItems = [],
+}) {
+  let coreItems;
+  if (isAdmin) {
+    coreItems = [
+      "Active Queue",
+      "Dispatch Queue",
+      "Report Intake",
+      "Active Roster",
+      "Responder Interface",
+      "System Audit",
+      "Closed Records",
+      "Archived Records",
+      "Admin",
+    ];
+  } else if (canDispatch && canRespond) {
+    coreItems = [
+      "Active Queue",
+      "Dispatch Queue",
+      "Report Intake",
+      "Active Roster",
+      "Responder Interface",
+      "System Audit",
+      "Closed Records",
+      "Archived Records",
+    ];
+  } else if (canDispatch) {
+    coreItems = [
+      "Active Queue",
+      "Dispatch Queue",
+      "Report Intake",
+      "Active Roster",
+      "System Audit",
+      "Closed Records",
+      "Archived Records",
+    ];
+  } else if (canRespond) {
+    coreItems = ["Responder Interface"];
+  } else {
+    coreItems = [];
+  }
+  if (moduleFocusActive) {
+    if (moduleIsolationActive) {
+      return [...coreItems, ...moduleNavItems];
+    }
+    return [
+      ...moduleNavItems,
+      ...(isAdmin ? ["Admin"] : []),
+    ];
+  }
+  return coreItems;
+}
+
 export function useAccessNavigation({
   activeDetailTab,
   meCapabilities,
   meResponder,
   moduleFocusActive = false,
+  moduleIsolationActive = false,
   moduleNavItems = [],
   responders,
   setActiveDetailTab,
@@ -24,54 +84,22 @@ export function useAccessNavigation({
   const canRespond = Boolean(meCapabilities.can_respond || isAdmin);
 
   const allowedNavItems = useMemo(() => {
-    let coreItems;
-    if (isAdmin) {
-      coreItems = [
-        "Active Queue",
-        "Dispatch Queue",
-        "Report Intake",
-        "Active Roster",
-        "Responder Interface",
-        "System Audit",
-        "Closed Records",
-        "Archived Records",
-        "Admin",
-      ];
-    } else if (canDispatch && canRespond) {
-      coreItems = [
-        "Active Queue",
-        "Dispatch Queue",
-        "Report Intake",
-        "Active Roster",
-        "Responder Interface",
-        "System Audit",
-        "Closed Records",
-        "Archived Records",
-      ];
-    } else if (canDispatch) {
-      coreItems = [
-        "Active Queue",
-        "Dispatch Queue",
-        "Report Intake",
-        "Active Roster",
-        "System Audit",
-        "Closed Records",
-        "Archived Records",
-      ];
-    } else if (canRespond) {
-      coreItems = ["Responder Interface"];
-    } else {
-      coreItems = [];
-    }
-    if (moduleFocusActive) {
-      return [
-        ...moduleNavItems,
-        ...(isAdmin ? ["Admin"] : []),
-      ];
-    }
-
-    return coreItems;
-  }, [canDispatch, canRespond, isAdmin, moduleFocusActive, moduleNavItems]);
+    return allowedNavigationForAccess({
+      isAdmin,
+      canDispatch,
+      canRespond,
+      moduleFocusActive,
+      moduleIsolationActive,
+      moduleNavItems,
+    });
+  }, [
+    canDispatch,
+    canRespond,
+    isAdmin,
+    moduleFocusActive,
+    moduleIsolationActive,
+    moduleNavItems,
+  ]);
 
   useEffect(() => {
     if (allowedNavItems.length === 0) {

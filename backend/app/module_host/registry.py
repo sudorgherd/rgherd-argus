@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from fastapi.routing import APIRoute, APIWebSocketRoute
 
 from .contract import ArgusModuleHost, ModuleRegistration
 
@@ -82,6 +83,29 @@ def _load_registration(entrypoint: Path, host: ArgusModuleHost) -> ModuleRegistr
         sys.path.remove(module_root)
 
 
+def _validate_host_guardable_routes(registration: ModuleRegistration) -> None:
+    """Reject route representations that cannot inherit host dependencies.
+
+    FastAPI propagates ``include_router`` dependencies to its own API route
+    types. Raw Starlette routes added to an ``APIRouter`` do not receive those
+    dependencies, so accepting them would turn an implementation detail into
+    an authentication bypass.
+    """
+
+    for router in registration.routers:
+        unsupported = [
+            type(route).__name__
+            for route in router.routes
+            if not isinstance(route, (APIRoute, APIWebSocketRoute))
+        ]
+        if unsupported:
+            route_types = ", ".join(sorted(set(unsupported)))
+            raise TypeError(
+                "Installed module routers may only contain FastAPI API routes; "
+                f"unsupported route type(s): {route_types}",
+            )
+
+
 def discover_installed_modules(
     app: FastAPI,
     *,
@@ -107,11 +131,22 @@ def discover_installed_modules(
             continue
         try:
             registration = _load_registration(entrypoint, host)
+            _validate_host_guardable_routes(registration)
             registry.register(registration)
             for exception_type, handler in registration.exception_handlers:
                 app.add_exception_handler(exception_type, handler)
             for router in registration.routers:
-                app.include_router(router)
+                app.include_router(
+                    router,
+                    dependencies=[
+                        Depends(host.require_current_responder),
+                        Depends(
+                            host.require_module_enabled(
+                                registration.metadata.module_id,
+                            ),
+                        ),
+                    ],
+                )
         except Exception as error:  # Keep a faulty optional module from taking down core.
             registry.record_failure(candidate.name, error)
 
